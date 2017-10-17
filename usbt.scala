@@ -12,6 +12,7 @@ object `package` {
 
 sealed trait Reference
 final case object ThisBuild extends Reference
+final case class LocalProject(id: String) extends Reference
 
 sealed trait ScopeAxis[+A]
 case object This extends ScopeAxis[Nothing]
@@ -25,7 +26,12 @@ object Scope {
 
 final case class AttributeKey[A](name: String)
 
-final case class ScopedKey[A](scope: Scope, attrKey: AttributeKey[A])
+sealed trait Scoped[A] {
+  def scope: Scope
+  def attrKey: AttributeKey[A]
+}
+
+final case class ScopedKey[A](scope: Scope, attrKey: AttributeKey[A]) extends Scoped[A]
 
 sealed trait Initialize[A]
 final case class Value[A](value: () => A) extends Initialize[A]
@@ -33,7 +39,9 @@ final case class GetValue[A, B](scopedKey: ScopedKey[A], transform: A => B) exte
 
 final case class Setting[A](scopedKey: ScopedKey[A], init: Initialize[A])
 
-final case class SettingKey[A](scope: Scope, attrKey: AttributeKey[A]) extends Initialize[A] {
+final case class SettingKey[A](scope: Scope, attrKey: AttributeKey[A])
+    extends Initialize[A] with Scoped[A]
+{
   def in(r: Reference): SettingKey[A] = in(Select(r))
   def in(r: ScopeAxis[Reference]): SettingKey[A] = in(Scope(r))
   def in(scope: Scope): SettingKey[A] = SettingKey(scope, attrKey)
@@ -55,6 +63,8 @@ final case class Project(id: String, settings: Seq[Setting[_]]) {
 }
 object Project {
   def apply(id: String): Project = Project(id, Nil)
+
+  implicit def projectToLocalProject(p: Project): LocalProject = LocalProject(p.id)
 }
 
 object Main {
@@ -63,28 +73,24 @@ object Main {
     val srcDir = SettingKey[File]("srcDir")
 
     val r = Project("r") settings (
-      baseDir in ThisBuild := file("/"),
+      baseDir in ThisBuild  := file("/"),
        srcDir in ThisBuild <<= baseDir map (_ / "src")
     )
 
     val a = Project("a") settings (baseDir := file("/a"))
     val b = Project("b") settings (baseDir := file("/b"))
+
+    def check[A](s: Scoped[A], expected: String) = {
+      val actual = ""
+      if (actual != expected) println(s"Expected $expected, Actual $actual")
+    }
+
+    check(baseDir in ThisBuild, "/")
+    check(baseDir in a, "/a")
+    check(baseDir in b, "/b")
+
+    check(srcDir in ThisBuild, "/src")
+    check(srcDir in a, "/a/src")
+    check(srcDir in b, "/b/src")
   }
 }
-
-
-//> show baseDir
-//[info] {.}/*:baseDir
-//[info] 	/
-//[info] a/*:baseDir
-//[info] 	/a
-//[info] b/*:baseDir
-//[info] 	/b
-
-//> show srcDir
-//[info] {.}/*:srcDir
-//[info] 	/src
-//[info] a/*:srcDir
-//[info] 	/src
-//[info] b/*:srcDir
-//[info] 	/src
