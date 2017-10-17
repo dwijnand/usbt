@@ -33,7 +33,7 @@ final case class GetValue[A, B](scopedKey: ScopedKey[A], transform: A => B) exte
 
 final case class Setting[A](scopedKey: ScopedKey[A], init: Initialize[A])
 
-final case class SettingKey[A](scope: Scope, attrKey: AttributeKey[A]) {
+final case class SettingKey[A](scope: Scope, attrKey: AttributeKey[A]) extends Initialize[A] {
   def in(r: Reference): SettingKey[A] = in(Select(r))
   def in(r: ScopeAxis[Reference]): SettingKey[A] = in(Scope(r))
   def in(scope: Scope): SettingKey[A] = SettingKey(scope, attrKey)
