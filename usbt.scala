@@ -69,21 +69,41 @@ object Project {
 
 object Main {
   def main(args: Array[String]): Unit = {
+    val foo = SettingKey[Int]("foo")
+    val bar = SettingKey[Int]("bar")
+    val baz = SettingKey[Int]("baz")
+
     val baseDir = SettingKey[File]("baseDir")
     val srcDir = SettingKey[File]("srcDir")
 
     val r = Project("r") settings (
+      foo in Global  := 1,
+      bar in Global  := 2,
+      baz in Global <<= foo.zip(bar).map(_ + _)
       baseDir in ThisBuild  := file("/"),
        srcDir in ThisBuild <<= baseDir map (_ / "src")
     )
 
-    val a = Project("a") settings (baseDir := file("/a"))
-    val b = Project("b") settings (baseDir := file("/b"))
+    val a = Project("a") settings (
+      foo := 4,
+      baseDir := file("/a"),
+    )
+    val b = Project("b") settings (
+      bar := 3,
+      baseDir := file("/b"),
+    )
 
     def check[A](s: Scoped[A], expected: String) = {
       val actual = ""
       if (actual != expected) println(s"Expected $expected, Actual $actual")
     }
+
+    check(foo in Global, 1)
+    check(bar in Global, 2)
+    check(baz in Global, 3)
+
+    check(baz in a, 6)
+    check(baz in b, 5)
 
     check(baseDir in ThisBuild, "/")
     check(baseDir in a, "/a")
