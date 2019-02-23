@@ -107,8 +107,8 @@ object Main {
       baseDir := file("/b"),
     )
 
-    def check[A](s: Scoped[A], expected: String) = {
-      val actual = ""
+    def check[A](s: Scoped[A], expected: A) = {
+      val actual = null.asInstanceOf[A]
       if (actual != expected) println(s"Expected $expected, Actual $actual")
     }
 
@@ -119,12 +119,12 @@ object Main {
     check(baz in a, 6)
     check(baz in b, 5)
 
-    check(baseDir in ThisBuild, "/")
-    check(baseDir in a, "/a")
-    check(baseDir in b, "/b")
+    check(baseDir in ThisBuild, file("/"))
+    check(baseDir in a, file("/a"))
+    check(baseDir in b, file("/b"))
 
-    check(srcDir in ThisBuild, "/src")
-    check(srcDir in a, "/a/src")
-    check(srcDir in b, "/b/src")
+    check(srcDir in ThisBuild, file("/src"))
+    check(srcDir in a, file("/a/src"))
+    check(srcDir in b, file("/b/src"))
   }
 }
