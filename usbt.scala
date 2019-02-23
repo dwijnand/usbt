@@ -21,8 +21,10 @@ final case class Select[A](x: A) extends ScopeAxis[A]
 
 final case class Scope(r: ScopeAxis[Reference])
 object Scope {
+  val Global: Scope = Scope(Zero)
   val ThisScope: Scope = Scope(This)
 }
+import Scope.{ Global, ThisScope }
 
 final case class AttributeKey[A](name: String)
 
