@@ -37,8 +37,8 @@ final case class ScopedKey[A](scope: Scope, attrKey: AttributeKey[A]) extends Sc
 
 sealed abstract class Initialize[A] {
   final def map[B](f: A => B): Initialize[B] = this match {
-    case in: Initialize.Value[a] => new Initialize.Value(() => f(in.value()))
-    case _ => flatMap(a => new Initialize.Value(() => f(a)))
+    case in: Initialize.Value[a] => Initialize.value(f(in.value()))
+    case _ => flatMap(a => Initialize.value(f(a)))
   }
 
   final def flatMap[B](f: A => Initialize[B]): Initialize[B] = new Initialize.Bind(this, f)
@@ -51,6 +51,9 @@ sealed abstract class Initialize[A] {
 object Initialize {
   final class Bind[A, B](val in: Initialize[A], val f: A => Initialize[B]) extends Initialize[B]
   final class Value[A](val value: () => A) extends Initialize[A]
+
+  def strict[A](value: A): Value[A] = new Value(() => value)
+  def value[A](value: => A): Value[A] = new Value(value _)
 }
 
 final case class Setting[A](scopedKey: ScopedKey[A], init: Initialize[A])
@@ -65,7 +68,7 @@ final case class SettingKey[A](scope: Scope, attrKey: AttributeKey[A])
   def scopedKey: ScopedKey[A] = ScopedKey[A](scope, attrKey)
 
   def <<=(init: Initialize[A]): Setting[A] = Setting(scopedKey, init)
-  def :=(value: => A): Setting[A] = this <<= new Initialize.Value(value _)
+  def :=(value: => A): Setting[A] = this <<= Initialize.value(value)
 }
 
 object SettingKey {
