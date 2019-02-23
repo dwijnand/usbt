@@ -93,9 +93,9 @@ object Main {
     val r = Project("r") settings (
       foo in Global  := 1,
       bar in Global  := 2,
-      baz in Global <<= foo.zip(bar).map(_ + _)
+      baz in Global <<= foo.zip(bar).map { case (a, b) => a + b },
       baseDir in ThisBuild  := file("/"),
-       srcDir in ThisBuild <<= baseDir map (_ / "src")
+      srcDir in ThisBuild <<= baseDir map (_ / "src"),
     )
 
     val a = Project("a") settings (
