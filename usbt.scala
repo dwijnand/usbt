@@ -2,7 +2,6 @@ package usbt
 
 sealed trait Reference
 case object ThisBuild extends Reference
-final case class LocalProject(id: String) extends Reference
 
 sealed trait ScopeAxis[+A]
 case object This extends ScopeAxis[Nothing]
@@ -14,44 +13,34 @@ object ScopeAxis {
 
 final case class Scope(r: ScopeAxis[Reference])
 
-final case class AttributeKey[A](name: String)
+final case class AttrKey[A](name: String)
 
 sealed trait ScopedKey[A] {
   def scope: Scope
-  def attrKey: AttributeKey[A]
+  def attrKey: AttrKey[A]
 }
 
-sealed abstract class Initialize[A] {
-  final def map[B](f: A => B): Initialize[B]                 = flatMap(a => Initialize.of(f(a)))
-  final def flatMap[B](f: A => Initialize[B]): Initialize[B] = new Initialize.Bind(this, f)
+sealed abstract class Init[A] {
+  final def map[B](f: A => B): Init[B] = Init.Map(this, f)
 }
-object Initialize {
-  final class Thunk[A](val thunk: () => A) extends Initialize[A]
-  final class Bind[A, B](val in: Initialize[A], val f: A => Initialize[B]) extends Initialize[B]
-  def of[A](thunk: => A): Thunk[A] = new Thunk(thunk _)
+object Init {
+  final case class Value[A](value: A) extends Init[A]
+  final case class Map[A, B](init: Init[A], f: A => B) extends Init[B]
 }
 
-final case class Setting[A](scopedKey: ScopedKey[A], init: Initialize[A])
+final case class Setting[A](scopedKey: ScopedKey[A], init: Init[A])
 
-final case class SettingKey[A](scope: Scope, attrKey: AttributeKey[A]) extends Initialize[A] with ScopedKey[A] {
+final case class SettingKey[A](scope: Scope, attrKey: AttrKey[A]) extends Init[A] with ScopedKey[A] {
   def in(r: Reference): SettingKey[A]            = in(Select(r))
   def in(r: ScopeAxis[Reference]): SettingKey[A] = in(Scope(r))
   def in(scope: Scope): SettingKey[A]            = SettingKey(scope, attrKey)
 
-  def <<=(init: Initialize[A]): Setting[A] = Setting(this, init)
-  def :=(value: => A): Setting[A]          = this <<= Initialize.of(value)
+  def <<=(init: Init[A]): Setting[A] = Setting(this, init)
+  def :=(value: A): Setting[A]       = this <<= Init.Value(value)
 }
 
 object SettingKey {
-  def apply[A](s: String): SettingKey[A] = SettingKey(This, AttributeKey[A](s))
-}
-
-final case class Project(id: String, settings: Seq[Setting[_]]) {
-  def settings(ss: Setting[_]*) = copy(settings = settings ++ ss)
-}
-object Project {
-  def apply(id: String): Project = Project(id, Nil)
-  implicit def projectToLocalProject(p: Project): LocalProject = LocalProject(p.id)
+  def apply[A](s: String): SettingKey[A] = SettingKey(This, AttrKey[A](s))
 }
 
 object Main {
@@ -59,22 +48,16 @@ object Main {
     val baseDir = SettingKey[String]("baseDir")
     val  srcDir = SettingKey[String]( "srcDir")
 
-    val root = Project("root") settings (
+    val settings = Seq(
+       srcDir in Global    <<= baseDir.map(_ + "/src"),
       baseDir in ThisBuild  := "/",
-       srcDir in ThisBuild <<= baseDir.map(_ + "/src"),
     )
-
-    val foo = Project("foo").settings(baseDir := "/foo")
 
     def check[A](s: ScopedKey[A], expected: A) = {
       val actual = null.asInstanceOf[A]
       if (actual != expected) println(s"Expected $expected, Actual $actual")
     }
 
-    check(baseDir in ThisBuild, "/")
-    check(baseDir in foo, "/foo")
-
     check(srcDir in ThisBuild, "/src")
-    check(srcDir in foo, "/foo/src")
   }
 }
