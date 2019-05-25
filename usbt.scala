@@ -28,12 +28,10 @@ import Scope.{ Global, ThisScope }
 
 final case class AttributeKey[A](name: String)
 
-sealed trait Scoped[A] {
+sealed trait ScopedKey[A] {
   def scope: Scope
   def attrKey: AttributeKey[A]
 }
-
-final case class ScopedKey[A](scope: Scope, attrKey: AttributeKey[A]) extends Scoped[A]
 
 sealed abstract class Initialize[A] {
   final def map[B](f: A => B): Initialize[B] = this match {
@@ -59,15 +57,13 @@ object Initialize {
 final case class Setting[A](scopedKey: ScopedKey[A], init: Initialize[A])
 
 final case class SettingKey[A](scope: Scope, attrKey: AttributeKey[A])
-    extends Initialize[A] with Scoped[A]
+    extends Initialize[A] with ScopedKey[A]
 {
   def in(r: Reference): SettingKey[A] = in(Select(r))
   def in(r: ScopeAxis[Reference]): SettingKey[A] = in(Scope(r))
   def in(scope: Scope): SettingKey[A] = SettingKey(scope, attrKey)
 
-  def scopedKey: ScopedKey[A] = ScopedKey[A](scope, attrKey)
-
-  def <<=(init: Initialize[A]): Setting[A] = Setting(scopedKey, init)
+  def <<=(init: Initialize[A]): Setting[A] = Setting(this, init)
   def :=(value: => A): Setting[A] = this <<= Initialize.value(value)
 }
 
@@ -96,7 +92,7 @@ object Main {
 
     val foo = Project("foo").settings(baseDir := file("/foo"))
 
-    def check[A](s: Scoped[A], expected: A) = {
+    def check[A](s: ScopedKey[A], expected: A) = {
       val actual = null.asInstanceOf[A]
       if (actual != expected) println(s"Expected $expected, Actual $actual")
     }
