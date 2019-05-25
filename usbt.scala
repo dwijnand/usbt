@@ -1,17 +1,9 @@
 package usbt
 
-sealed trait Reference
-case object ThisBuild extends Reference
-
-sealed trait ScopeAxis[+A]
-case object This extends ScopeAxis[Nothing]
-case object Global extends ScopeAxis[Nothing]
-final case class Select[A](x: A) extends ScopeAxis[A]
-object ScopeAxis {
-  implicit def scopeAxisToScope(axis: ScopeAxis[Nothing]): Scope = Scope(axis)
-}
-
-final case class Scope(r: ScopeAxis[Reference])
+sealed abstract class Scope
+case object This extends Scope
+case object Global extends Scope
+case object ThisBuild extends Scope
 
 final case class AttrKey[A](name: String)
 
@@ -31,12 +23,9 @@ object Init {
 final case class Setting[A](scopedKey: ScopedKey[A], init: Init[A])
 
 final case class SettingKey[A](scope: Scope, attrKey: AttrKey[A]) extends Init[A] with ScopedKey[A] {
-  def in(r: Reference): SettingKey[A]            = in(Select(r))
-  def in(r: ScopeAxis[Reference]): SettingKey[A] = in(Scope(r))
-  def in(scope: Scope): SettingKey[A]            = SettingKey(scope, attrKey)
-
-  def <<=(init: Init[A]): Setting[A] = Setting(this, init)
-  def :=(value: A): Setting[A]       = this <<= Init.Value(value)
+  def in(scope: Scope): SettingKey[A] = SettingKey(scope, attrKey)
+  def <<=(init: Init[A]): Setting[A]  = Setting(this, init)
+  def :=(value: A): Setting[A]        = this <<= Init.Value(value)
 }
 
 object SettingKey {
