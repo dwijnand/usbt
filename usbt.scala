@@ -1,15 +1,5 @@
 package usbt
 
-import java.io.File
-
-object `package` {
-  def file(s: String) = new File(s)
-
-  implicit class RichFile(private val f: File) extends AnyVal {
-    def /(s: String): File = new File(f, s)
-  }
-}
-
 sealed trait Reference
 final case object ThisBuild extends Reference
 final case class LocalProject(id: String) extends Reference
@@ -82,25 +72,25 @@ object Project {
 
 object Main {
   def main(args: Array[String]): Unit = {
-    val baseDir = SettingKey[File]("baseDir")
-    val srcDir = SettingKey[File]("srcDir")
+    val baseDir = SettingKey[String]("baseDir")
+    val srcDir = SettingKey[String]("srcDir")
 
     val root = Project("root") settings (
-      baseDir in ThisBuild  := file("/"),
-       srcDir in ThisBuild <<= baseDir.map(_ / "src"),
+      baseDir in ThisBuild  := "/",
+       srcDir in ThisBuild <<= baseDir.map(_ + "/src"),
     )
 
-    val foo = Project("foo").settings(baseDir := file("/foo"))
+    val foo = Project("foo").settings(baseDir := "/foo")
 
     def check[A](s: ScopedKey[A], expected: A) = {
       val actual = null.asInstanceOf[A]
       if (actual != expected) println(s"Expected $expected, Actual $actual")
     }
 
-    check(baseDir in ThisBuild, file("/"))
-    check(baseDir in foo, file("/foo"))
+    check(baseDir in ThisBuild, "/")
+    check(baseDir in foo, "/foo")
 
-    check(srcDir in ThisBuild, file("/src"))
-    check(srcDir in foo, file("/foo/src"))
+    check(srcDir in ThisBuild, "/src")
+    check(srcDir in foo, "/foo/src")
   }
 }
