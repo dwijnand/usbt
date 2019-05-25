@@ -86,48 +86,25 @@ object Project {
 
 object Main {
   def main(args: Array[String]): Unit = {
-    val foo = SettingKey[Int]("foo")
-    val bar = SettingKey[Int]("bar")
-    val baz = SettingKey[Int]("baz")
-
     val baseDir = SettingKey[File]("baseDir")
     val srcDir = SettingKey[File]("srcDir")
 
-    val r = Project("r") settings (
-      foo in Global  := 1,
-      bar in Global  := 2,
-      baz in Global <<= foo.zip(bar).map { case (a, b) => a + b },
+    val root = Project("root") settings (
       baseDir in ThisBuild  := file("/"),
-      srcDir in ThisBuild <<= baseDir map (_ / "src"),
+       srcDir in ThisBuild <<= baseDir.map(_ / "src"),
     )
 
-    val a = Project("a") settings (
-      foo := 4,
-      baseDir := file("/a"),
-    )
-    val b = Project("b") settings (
-      bar := 3,
-      baseDir := file("/b"),
-    )
+    val foo = Project("foo").settings(baseDir := file("/foo"))
 
     def check[A](s: Scoped[A], expected: A) = {
       val actual = null.asInstanceOf[A]
       if (actual != expected) println(s"Expected $expected, Actual $actual")
     }
 
-    check(foo in Global, 1)
-    check(bar in Global, 2)
-    check(baz in Global, 3)
-
-    check(baz in a, 6)
-    check(baz in b, 5)
-
     check(baseDir in ThisBuild, file("/"))
-    check(baseDir in a, file("/a"))
-    check(baseDir in b, file("/b"))
+    check(baseDir in foo, file("/foo"))
 
     check(srcDir in ThisBuild, file("/src"))
-    check(srcDir in a, file("/a/src"))
-    check(srcDir in b, file("/b/src"))
+    check(srcDir in foo, file("/foo/src"))
   }
 }
