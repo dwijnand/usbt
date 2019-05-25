@@ -1,7 +1,6 @@
 package usbt
 
 sealed abstract class Scope
-case object This extends Scope
 case object Global extends Scope
 case object ThisBuild extends Scope
 
@@ -29,7 +28,7 @@ final case class SettingKey[A](scope: Scope, attrKey: AttrKey[A]) extends Init[A
 }
 
 object SettingKey {
-  def apply[A](s: String): SettingKey[A] = SettingKey(This, AttrKey[A](s))
+  def apply[A](s: String): SettingKey[A] = SettingKey(Global, AttrKey[A](s))
 }
 
 object Main {
