@@ -1,20 +1,18 @@
 package usbt
 
 sealed trait Reference
-final case object ThisBuild extends Reference
+case object ThisBuild extends Reference
 final case class LocalProject(id: String) extends Reference
 
 sealed trait ScopeAxis[+A]
 case object This extends ScopeAxis[Nothing]
-case object Zero extends ScopeAxis[Nothing]
+case object Global extends ScopeAxis[Nothing]
 final case class Select[A](x: A) extends ScopeAxis[A]
+object ScopeAxis {
+  implicit def scopeAxisToScope(axis: ScopeAxis[Nothing]): Scope = Scope(axis)
+}
 
 final case class Scope(r: ScopeAxis[Reference])
-object Scope {
-  val Global: Scope = Scope(Zero)
-  val ThisScope: Scope = Scope(This)
-}
-import Scope.{ Global, ThisScope }
 
 final case class AttributeKey[A](name: String)
 
@@ -58,7 +56,7 @@ final case class SettingKey[A](scope: Scope, attrKey: AttributeKey[A])
 }
 
 object SettingKey {
-  def apply[A](s: String): SettingKey[A] = SettingKey[A](Scope.ThisScope, AttributeKey[A](s))
+  def apply[A](s: String): SettingKey[A] = SettingKey[A](This, AttributeKey[A](s))
 }
 
 final case class Project(id: String, settings: Seq[Setting[_]]) {
