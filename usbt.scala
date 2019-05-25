@@ -22,56 +22,42 @@ sealed trait ScopedKey[A] {
 }
 
 sealed abstract class Initialize[A] {
-  final def map[B](f: A => B): Initialize[B] = this match {
-    case in: Initialize.Value[a] => Initialize.value(f(in.value()))
-    case _ => flatMap(a => Initialize.value(f(a)))
-  }
-
+  final def map[B](f: A => B): Initialize[B]                 = flatMap(a => Initialize.of(f(a)))
   final def flatMap[B](f: A => Initialize[B]): Initialize[B] = new Initialize.Bind(this, f)
-
-  final def zipWith[B, C](that: Initialize[B])(f: (A, B) => C): Initialize[C] =
-    flatMap(a => that.map(b => f(a, b)))
-
-  final def zip[B](that: Initialize[B]): Initialize[(A, B)] = zipWith(that)((a, b) => (a, b))
 }
 object Initialize {
+  final class Thunk[A](val thunk: () => A) extends Initialize[A]
   final class Bind[A, B](val in: Initialize[A], val f: A => Initialize[B]) extends Initialize[B]
-  final class Value[A](val value: () => A) extends Initialize[A]
-
-  def strict[A](value: A): Value[A] = new Value(() => value)
-  def value[A](value: => A): Value[A] = new Value(value _)
+  def of[A](thunk: => A): Thunk[A] = new Thunk(thunk _)
 }
 
 final case class Setting[A](scopedKey: ScopedKey[A], init: Initialize[A])
 
-final case class SettingKey[A](scope: Scope, attrKey: AttributeKey[A])
-    extends Initialize[A] with ScopedKey[A]
-{
-  def in(r: Reference): SettingKey[A] = in(Select(r))
+final case class SettingKey[A](scope: Scope, attrKey: AttributeKey[A]) extends Initialize[A] with ScopedKey[A] {
+  def in(r: Reference): SettingKey[A]            = in(Select(r))
   def in(r: ScopeAxis[Reference]): SettingKey[A] = in(Scope(r))
-  def in(scope: Scope): SettingKey[A] = SettingKey(scope, attrKey)
+  def in(scope: Scope): SettingKey[A]            = SettingKey(scope, attrKey)
 
   def <<=(init: Initialize[A]): Setting[A] = Setting(this, init)
-  def :=(value: => A): Setting[A] = this <<= Initialize.value(value)
+  def :=(value: => A): Setting[A]          = this <<= Initialize.of(value)
 }
 
 object SettingKey {
-  def apply[A](s: String): SettingKey[A] = SettingKey[A](This, AttributeKey[A](s))
+  def apply[A](s: String): SettingKey[A] = SettingKey(This, AttributeKey[A](s))
 }
 
 final case class Project(id: String, settings: Seq[Setting[_]]) {
-  def settings(ss: Setting[_]*) = copy(settings = this.settings ++ ss)
+  def settings(ss: Setting[_]*) = copy(settings = settings ++ ss)
 }
 object Project {
   def apply(id: String): Project = Project(id, Nil)
-
   implicit def projectToLocalProject(p: Project): LocalProject = LocalProject(p.id)
 }
 
 object Main {
   def main(args: Array[String]): Unit = {
     val baseDir = SettingKey[String]("baseDir")
-    val srcDir = SettingKey[String]("srcDir")
+    val  srcDir = SettingKey[String]( "srcDir")
 
     val root = Project("root") settings (
       baseDir in ThisBuild  := "/",
