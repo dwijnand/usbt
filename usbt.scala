@@ -1,6 +1,7 @@
 package usbt
 
 sealed abstract class Scope
+case object This extends Scope
 case object Global extends Scope
 case object ThisBuild extends Scope
 
@@ -12,7 +13,7 @@ object Init {
   final case class Mapped[A, B](init: Init[A], f: A => B) extends Init[B]
 }
 
-final case class Key[A](name: String, scope: Scope = Global) extends Init[A] {
+final case class Key[A](name: String, scope: Scope = This) extends Init[A] {
   final def in(scope: Scope): Key[A]       = Key(name, scope)
   final def <<=(init: Init[A]): Setting[A] = Setting(this, init)
   final def :=(value: A): Setting[A]       = this <<= Init.Value(value)
@@ -30,14 +31,7 @@ object Main {
       baseDir in ThisBuild  := "/",
     )
 
-    import scala.collection.mutable.Builder
-    val zero = Map.empty[Key[_], Builder[Setting[_], Seq[Setting[_]]]]
-    val map: Map[Key[_], Seq[Setting[_]]] = settings
-      .foldLeft(zero)((acc, s) => acc.updated(s.key, acc.getOrElse(s.key, Seq.newBuilder) += s))
-      .iterator
-      .map { case (key, builder) => key -> builder.result() }
-      .toMap
-    println(map.map(kv => keyToString(kv._1) -> kv._2.map(settingToString).mkString("[\n    ", "\n    ", "\n  ]")).mkString("Map(\n  ", "\n  ", "\n)"))
+    println(settings.map(settingToString).mkString("[\n  ", "\n  ", "\n]"))
 
     def check[A](key: Key[A], expected: A) = {
       val actual = null.asInstanceOf[A]
@@ -49,7 +43,7 @@ object Main {
 
   def settingToString(s: Setting[_]) = keyToString(s.key) + initToString(s.init, addOp = true)
 
-  def keyToString(key: Key[_]) = s"""${key.scope} / "${key.name}""""
+  def keyToString(key: Key[_]) = s"""${key.scope} / ${key.name}"""
 
   def initToString(init: Init[_], addOp: Boolean = false): String = init match {
     case Init.Value(x)        => (if (addOp) "  := " else "") + anyToString(x)
