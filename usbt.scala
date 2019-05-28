@@ -87,10 +87,10 @@ final class SettingMap(val settingsMap: scala.collection.Map[Name[_], ScopeInitM
   }
 
   private def evalInit[A](init: Init[A], scope: Scope): A = init match {
-    case Init.Value(x: A @unchecked)                            => x
-    case Init.Mapped(init: Init[A @unchecked], f: (A => A))     => f(evalInit(init, scope))
-    case Init.Bind(init: Init[A @unchecked], f: (A => Init[A])) => evalInit(f(evalInit(init, scope)), scope)
-    case key: Key[A]                                            => evalInit(getInit(key, scope), scope)
+    case Init.Value(x)        => x
+    case Init.Mapped(init, f) => f(evalInit(init, scope))
+    case Init.Bind(init, f)   => evalInit(f(evalInit(init, scope)), scope)
+    case key: Key[A]          => evalInit(getInit(key, scope), scope)
   }
 
   override def toString = {
