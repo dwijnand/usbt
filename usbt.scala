@@ -63,18 +63,25 @@ object Main {
     map.map(kv => kv._1.value -> kv._2.map(kv => kv._1 -> initToString(kv._2)).mkString("Map(\n    ", "\n    ", "\n  )")).mkString("\nMap(\n  ", "\n  ", "\n)")
   }
 
+  // flatMap
+  // tuples
+  // different key types
+  // add tasks
+  // add input tasks
   def main(args: Array[String]): Unit = {
     val baseDir = Key[String]("baseDir")
     val  srcDir = Key[String]( "srcDir")
 
+    def pathAppend(a: String, b: String) = if (a.endsWith("/")) a + b else a + "/" + b
+
     val settingsSeq = Seq(
-      baseDir in ThisBuild := "/base",
-       srcDir in Global   <<= baseDir.map(_ + "/src"),
+       srcDir in Global    <<= baseDir.map(pathAppend(_, "src")),
+      baseDir in ThisBuild  := "/",
     )
 
     val settingsMap: Map[Name[String], Map[Scope, Init[String]]] = Map(
-      baseDir.name -> Map(ThisBuild -> Init.Value("/base")),
-       srcDir.name -> Map(Global    -> baseDir.map(_ + "/src")),
+      baseDir.name -> Map(ThisBuild -> Init.Value("/")),
+       srcDir.name -> Map(Global    -> baseDir.map(pathAppend(_, "src"))),
     )
 
     def check(key1: Key[String], expected: String) = {
@@ -96,6 +103,6 @@ object Main {
       if (actual != expected) println(s"Expected $expected, Actual $actual")
     }
 
-    check(srcDir in ThisBuild, "/base/src")
+    check(srcDir in ThisBuild, "/src")
   }
 }
