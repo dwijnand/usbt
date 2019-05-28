@@ -7,11 +7,14 @@ case object ThisBuild extends Scope
 final case class LocalProject(id: String) extends Scope
 
 sealed abstract class Init[+A] {
-  final def map[B](f: A => B): Init[B] = Init.Mapped(this, f)
+  final def map[B](f: A => B): Init[B]                         = Init.Mapped(this, f)
+  final def flatMap[B](f: A => Init[B]): Init[B]               = Init.Bind(this, f)
+  final def zipWith[B, C](x: Init[B])(f: (A, B) => C): Init[C] = flatMap(a => x.map(b => f(a, b)))
 }
 object Init {
   final case class Value[A](value: A) extends Init[A]
   final case class Mapped[A, B](init: Init[A], f: A => B) extends Init[B]
+  final case class Bind[A, B](init: Init[A], f: A => Init[B]) extends Init[B]
 }
 
 final case class Name[A](value: String)
@@ -40,6 +43,7 @@ object Main {
   def initToString(init: Init[_], addOp: Boolean = false): String = init match {
     case Init.Value(x)        => (if (addOp) "  := " else "") + anyToString(x)
     case Init.Mapped(init, _) => (if (addOp) " <<= " else "") + initToString(init) + ".map(<f>)"
+    case Init.Bind(init, _)   => (if (addOp) " <<= " else "") + initToString(init) + ".flatMap(<f>)"
     case key: Key[_]          => (if (addOp) " <<= " else "") + keyToString(key)
   }
 
@@ -64,15 +68,15 @@ object Main {
     map.map(kv => kv._1.value -> kv._2.map(kv => kv._1 -> initToString(kv._2)).mkString("Map(\n    ", "\n    ", "\n  )")).mkString("\nMap(\n  ", "\n  ", "\n)")
   }
 
-  // flatMap
   // tuples
   // different key types
   // add tasks
   // add input tasks
   def main(args: Array[String]): Unit = {
-    val   baseDir          = Key[String](   "baseDir")
-    val    srcDir          = Key[String](    "srcDir")
-    val targetDir          = Key[String]( "targetDir")
+    val   baseDir          = Key[String](       "baseDir")
+    val    srcDir          = Key[String](        "srcDir")
+    val targetDir          = Key[String](     "targetDir")
+    val crossTargetDir     = Key[String]("crossTargetDir")
     val scalaVersion       = Key[String]("scalaVersion")
     val scalaBinaryVersion = Key[String]("scalaBinaryVersion")
 
@@ -83,6 +87,7 @@ object Main {
     val settingsSeq = Seq(
                   srcDir in Global    <<= baseDir.map(pathAppend(_, "src")),
                targetDir in Global    <<= baseDir.map(pathAppend(_, "target")),
+          crossTargetDir in Global    <<= targetDir.zipWith(scalaBinaryVersion)((target, sbv) => pathAppend(target, s"scala-$sbv")),
                  baseDir in ThisBuild  := "/",
       scalaVersion       in ThisBuild  := "2.12.8",
       scalaBinaryVersion in ThisBuild  := "2.12",
@@ -96,29 +101,32 @@ object Main {
       ),
          srcDir.name -> Map(Global -> baseDir.map(pathAppend(_, "src"))),
       targetDir.name -> Map(Global -> baseDir.map(pathAppend(_, "target"))),
+      crossTargetDir.name -> Map(Global -> targetDir.zipWith(scalaBinaryVersion)((target, sbv) => pathAppend(target, s"scala-$sbv"))),
       scalaVersion.name -> Map(ThisBuild -> Init.Value("2.12.8")),
       scalaBinaryVersion.name -> Map(ThisBuild -> Init.Value("2.12")),
     )
 
-    def check(key1: Key[String], expected: String) = {
-      def lookup(key: Key[String]) = {
+    def check(key: Key[String], expected: String) = {
+      def getInit(key: Key[String], scope0: Scope): Init[String] = {
+        val scope = if (key.scope == This) scope0 else key.scope
         val scopeMap = settingsMap(key.name)
-        def log = sys.error(s"no ${keyToString(key)} in ${settingMapToString(settingsMap)}")
+        def log = sys.error(s"no ${keyToString(Key(key.name, scope))} in ${settingMapToString(settingsMap)}")
         def getGlobal    = scopeMap.getOrElse(Global, log)
         def getThisBuild = scopeMap.getOrElse(ThisBuild, getGlobal)
-        key.scope match {
-          case This             => scopeMap.getOrElse(if (key1.scope == This) Global else key1.scope, log)
+        scope match {
+          case This             => getGlobal
           case Global           => getGlobal
           case ThisBuild        => getThisBuild
-          case LocalProject(id) => scopeMap.getOrElse(key.scope, getThisBuild)
+          case LocalProject(id) => scopeMap.getOrElse(scope, getThisBuild)
         }
       }
-      def evalInit(init: Init[String]): String = init match {
-        case Init.Value(x: String)                                             => x
-        case Init.Mapped(init: Init[String @unchecked], f: (String => String)) => f(evalInit(init))
-        case key: Key[String]                                                  => evalInit(lookup(key))
+      def evalInit(init: Init[String], scope: Scope): String = init match {
+        case Init.Value(x: String)                                                 => x
+        case Init.Mapped(init: Init[String @unchecked], f: (String => String))     => f(evalInit(init, scope))
+        case Init.Bind(init: Init[String @unchecked], f: (String => Init[String])) => evalInit(f(evalInit(init, scope)), scope)
+        case key: Key[String]                                                      => evalInit(getInit(key, scope), scope)
       }
-      val actual = evalInit(lookup(key1))
+      val actual = evalInit(getInit(key, key.scope), key.scope)
       if (actual != expected) println(s"Expected $expected, Actual $actual")
     }
 
@@ -130,5 +138,7 @@ object Main {
 
     check(scalaVersion in foo, "2.12.8")
     check(scalaBinaryVersion in foo, "2.12")
+
+    check(crossTargetDir in foo, "/foo/target/scala-2.12")
   }
 }
