@@ -31,6 +31,34 @@ object Key {
 
 final case class Setting[A](key: Key[A], init: Init[A])
 
+final class SettingMap(val settingsMap: Map[Name[_], Map[Scope, Init[_]]]) {
+  import Main._
+
+  def getValue[A](key: Key[A]): A = evalInit(getInit(key, key.scope), key.scope)
+
+  def getInit[A](key: Key[A], scope0: Scope): Init[A] = {
+    val scope = if (key.scope == This) scope0 else key.scope
+    val scopeMap = settingsMap(key.name)
+    def log = sys.error(s"no ${keyToString(Key(key.name, scope))} in ${settingMapToString(this)}")
+    def getGlobal    = scopeMap.getOrElse(Global, log)
+    def getThisBuild = scopeMap.getOrElse(ThisBuild, getGlobal)
+    val init: Init[_] = scope match {
+      case This             => getGlobal
+      case Global           => getGlobal
+      case ThisBuild        => getThisBuild
+      case LocalProject(id) => scopeMap.getOrElse(scope, getThisBuild)
+    }
+    init.asInstanceOf[Init[A]]
+  }
+
+  private def evalInit[A](init: Init[A], scope: Scope): A = init match {
+    case Init.Value(x: A @unchecked)                            => x
+    case Init.Mapped(init: Init[A @unchecked], f: (A => A))     => f(evalInit(init, scope))
+    case Init.Bind(init: Init[A @unchecked], f: (A => Init[A])) => evalInit(f(evalInit(init, scope)), scope)
+    case key: Key[A]                                            => evalInit(getInit(key, scope), scope)
+  }
+}
+
 object Main {
 
   def anyToString(x: Any) = x match {
@@ -64,8 +92,8 @@ object Main {
     println(ss.map(settingToString).mkString("[\n  ", "\n  ", "\n]"))
   }
 
-  def settingMapToString(map: Map[Name[_], Map[Scope, Init[_]]]) = {
-    map.map(kv => kv._1.value -> kv._2.map(kv => kv._1 -> initToString(kv._2)).mkString("Map(\n    ", "\n    ", "\n  )")).mkString("\nMap(\n  ", "\n  ", "\n)")
+  def settingMapToString(map: SettingMap) = {
+    map.settingsMap.map(kv => kv._1.value -> kv._2.map(kv => kv._1 -> initToString(kv._2)).mkString("Map(\n    ", "\n    ", "\n  )")).mkString("\nMap(\n  ", "\n  ", "\n)")
   }
 
   // add tasks
@@ -96,11 +124,11 @@ object Main {
                  baseDir in foo        := "/foo",
     )
 
-    val settingsMap: Map[Name[_], Map[Scope, Init[_]]] = Map(
-      baseDir.name -> Map(
-        ThisBuild -> Init.Value("/"),
-              foo -> Init.Value("/foo"),
-      ),
+    val settingsMap: SettingMap = new SettingMap(Map(
+        baseDir.name -> Map(
+          ThisBuild -> Init.Value("/"),
+                foo -> Init.Value("/foo"),
+        ),
               srcDir.name -> Map(Global -> baseDir.map(pathAppend(_, "src"))),
            targetDir.name -> Map(Global -> baseDir.map(pathAppend(_, "target"))),
          scalaSrcDir.name -> Map(Global -> srcDir.map(pathAppend(_, "main/scala"))),
@@ -108,30 +136,10 @@ object Main {
       crossTargetDir.name -> Map(Global -> targetDir.zipWith(scalaBinaryVersion)((target, sbv) => pathAppend(target, s"scala-$sbv"))),
       scalaVersion.name -> Map(ThisBuild -> Init.Value("2.12.8")),
       scalaBinaryVersion.name -> Map(ThisBuild -> Init.Value("2.12")),
-    )
+    ))
 
     def check[A](key: Key[A], expected: A) = {
-      def getInit[A](key: Key[A], scope0: Scope): Init[A] = {
-        val scope = if (key.scope == This) scope0 else key.scope
-        val scopeMap = settingsMap(key.name)
-        def log = sys.error(s"no ${keyToString(Key(key.name, scope))} in ${settingMapToString(settingsMap)}")
-        def getGlobal    = scopeMap.getOrElse(Global, log)
-        def getThisBuild = scopeMap.getOrElse(ThisBuild, getGlobal)
-        val init: Init[_] = scope match {
-          case This             => getGlobal
-          case Global           => getGlobal
-          case ThisBuild        => getThisBuild
-          case LocalProject(id) => scopeMap.getOrElse(scope, getThisBuild)
-        }
-        init.asInstanceOf[Init[A]]
-      }
-      def evalInit(init: Init[A], scope: Scope): A = init match {
-        case Init.Value(x: A @unchecked)                            => x
-        case Init.Mapped(init: Init[A @unchecked], f: (A => A))     => f(evalInit(init, scope))
-        case Init.Bind(init: Init[A @unchecked], f: (A => Init[A])) => evalInit(f(evalInit(init, scope)), scope)
-        case key: Key[A]                                            => evalInit(getInit(key, scope), scope)
-      }
-      val actual = evalInit(getInit(key, key.scope), key.scope)
+      val actual = settingsMap.getValue(key)
       if (actual != expected) println(s"Expected $expected, Actual $actual")
     }
 
