@@ -68,14 +68,14 @@ object Main {
     map.map(kv => kv._1.value -> kv._2.map(kv => kv._1 -> initToString(kv._2)).mkString("Map(\n    ", "\n    ", "\n  )")).mkString("\nMap(\n  ", "\n  ", "\n)")
   }
 
-  // tuples
   // different key types
   // add tasks
   // add input tasks
   def main(args: Array[String]): Unit = {
-    val   baseDir          = Key[String](       "baseDir")
-    val    srcDir          = Key[String](        "srcDir")
-    val targetDir          = Key[String](     "targetDir")
+    val        baseDir     = Key[String](       "baseDir")
+    val         srcDir     = Key[String](        "srcDir")
+    val    scalaSrcDir     = Key[String](   "scalaSrcDir")
+    val      targetDir     = Key[String](     "targetDir")
     val crossTargetDir     = Key[String]("crossTargetDir")
     val scalaVersion       = Key[String]("scalaVersion")
     val scalaBinaryVersion = Key[String]("scalaBinaryVersion")
@@ -87,6 +87,7 @@ object Main {
     val settingsSeq = Seq(
                   srcDir in Global    <<= baseDir.map(pathAppend(_, "src")),
                targetDir in Global    <<= baseDir.map(pathAppend(_, "target")),
+             scalaSrcDir in Global    <<= srcDir.map(pathAppend(_, "main/scala")),
           crossTargetDir in Global    <<= targetDir.zipWith(scalaBinaryVersion)((target, sbv) => pathAppend(target, s"scala-$sbv")),
                  baseDir in ThisBuild  := "/",
       scalaVersion       in ThisBuild  := "2.12.8",
@@ -99,8 +100,9 @@ object Main {
         ThisBuild -> Init.Value("/"),
               foo -> Init.Value("/foo"),
       ),
-         srcDir.name -> Map(Global -> baseDir.map(pathAppend(_, "src"))),
-      targetDir.name -> Map(Global -> baseDir.map(pathAppend(_, "target"))),
+              srcDir.name -> Map(Global -> baseDir.map(pathAppend(_, "src"))),
+           targetDir.name -> Map(Global -> baseDir.map(pathAppend(_, "target"))),
+         scalaSrcDir.name -> Map(Global -> srcDir.map(pathAppend(_, "main/scala"))),
       crossTargetDir.name -> Map(Global -> targetDir.zipWith(scalaBinaryVersion)((target, sbv) => pathAppend(target, s"scala-$sbv"))),
       scalaVersion.name -> Map(ThisBuild -> Init.Value("2.12.8")),
       scalaBinaryVersion.name -> Map(ThisBuild -> Init.Value("2.12")),
@@ -139,6 +141,7 @@ object Main {
     check(scalaVersion in foo, "2.12.8")
     check(scalaBinaryVersion in foo, "2.12")
 
+    check(   scalaSrcDir in foo, "/foo/src/main/scala")
     check(crossTargetDir in foo, "/foo/target/scala-2.12")
   }
 }
