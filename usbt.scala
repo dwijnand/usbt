@@ -70,17 +70,19 @@ object Main {
   // add tasks
   // add input tasks
   def main(args: Array[String]): Unit = {
-    val baseDir = Key[String]("baseDir")
-    val  srcDir = Key[String]( "srcDir")
+    val   baseDir = Key[String](   "baseDir")
+    val    srcDir = Key[String](    "srcDir")
+    val targetDir = Key[String]( "targetDir")
 
     val foo = LocalProject("foo")
 
     def pathAppend(a: String, b: String) = if (a.endsWith("/")) a + b else a + "/" + b
 
     val settingsSeq = Seq(
-       srcDir in Global    <<= baseDir.map(pathAppend(_, "src")),
-      baseDir in ThisBuild  := "/",
-      baseDir in foo        := "/foo",
+         srcDir in Global    <<= baseDir.map(pathAppend(_, "src")),
+      targetDir in Global    <<= baseDir.map(pathAppend(_, "target")),
+        baseDir in ThisBuild  := "/",
+        baseDir in foo        := "/foo",
     )
 
     val settingsMap: Map[Name[String], Map[Scope, Init[String]]] = Map(
@@ -88,7 +90,8 @@ object Main {
         ThisBuild -> Init.Value("/"),
               foo -> Init.Value("/foo"),
       ),
-       srcDir.name -> Map(Global    -> baseDir.map(pathAppend(_, "src"))),
+         srcDir.name -> Map(Global -> baseDir.map(pathAppend(_, "src"))),
+      targetDir.name -> Map(Global -> baseDir.map(pathAppend(_, "target"))),
     )
 
     def check(key1: Key[String], expected: String) = {
@@ -113,7 +116,10 @@ object Main {
       if (actual != expected) println(s"Expected $expected, Actual $actual")
     }
 
-    check(srcDir in ThisBuild, "/src")
-    check(srcDir in foo,       "/foo/src")
+    check(srcDir in ThisBuild,    "/src")
+    check(srcDir in foo,          "/foo/src")
+
+    check(targetDir in ThisBuild, "/target")
+    check(targetDir in foo,       "/foo/target")
   }
 }
