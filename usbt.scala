@@ -124,6 +124,8 @@ object Main {
   // add tasks
   // add input tasks
   def main(args: Array[String]): Unit = {
+    val bippy = LocalProject("bippy")
+
     val        baseDir     = Key[String](       "baseDir")
     val         srcDir     = Key[String](        "srcDir")
     val      targetDir     = Key[String](     "targetDir")
@@ -133,7 +135,9 @@ object Main {
     val scalaVersion       = Key[String]("scalaVersion")
     val scalaBinaryVersion = Key[String]("scalaBinaryVersion")
 
-    val foo = LocalProject("foo")
+    val foo = Key[String]("foo")
+    val bar = Key[String]("bar")
+    val baz = Key[String]("baz")
 
     val settingsMap: SettingMap = SettingMap.fromVarargs(
                   srcDir in Global    <<= baseDir.map(_ / "src"),
@@ -144,27 +148,36 @@ object Main {
                  baseDir in ThisBuild  := "/",
       scalaVersion       in ThisBuild  := "2.12.8",
       scalaBinaryVersion in ThisBuild  := "2.12",
-                 baseDir in foo        := "/foo",
+                 baseDir in bippy      := "/bippy",
     )
 
     println(settingsMap)
 
-    def check[A](key: Key[A], expected: A) = {
-      val actual = settingsMap.getValue(key)
-      if (actual != expected) println(s"Expected $expected, Actual $actual")
+    def assertEquals[A](actual: A, expected: A, desc: String = "") = {
+      if (actual != expected) {
+        if (desc == "")
+          println(s"Expected $expected, Actual $actual")
+        else
+          println(s"For $desc: Expected $expected, Actual $actual")
+      }
     }
 
+    def assertKey[A](settingsMap: SettingMap)(key: Key[A], expected: A) = {
+      assertEquals(settingsMap.getValue(key), expected, key.toString)
+    }
+    def check[A](key: Key[A], expected: A) = assertKey(settingsMap)(key, expected)
+
     check(srcDir in ThisBuild,    "/src")
-    check(srcDir in foo,          "/foo/src")
+    check(srcDir in bippy,        "/bippy/src")
 
     check(targetDir in ThisBuild, "/target")
-    check(targetDir in foo,       "/foo/target")
+    check(targetDir in bippy,     "/bippy/target")
 
-    check(scalaVersion in foo, "2.12.8")
-    check(scalaBinaryVersion in foo, "2.12")
+    check(scalaVersion in bippy, "2.12.8")
+    check(scalaBinaryVersion in bippy, "2.12")
 
-    check(   scalaSrcDir in foo, "/foo/src/main/scala")
-    check(       srcDirs in foo, Seq("/foo/src/main/scala", "/foo/src/main/scala-2.12"))
-    check(crossTargetDir in foo, "/foo/target/scala-2.12")
+    check(   scalaSrcDir in bippy, "/bippy/src/main/scala")
+    check(       srcDirs in bippy, Seq("/bippy/src/main/scala", "/bippy/src/main/scala-2.12"))
+    check(crossTargetDir in bippy, "/bippy/target/scala-2.12")
   }
 }
