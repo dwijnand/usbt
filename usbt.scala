@@ -4,42 +4,42 @@ import scala.collection.immutable
 import scala.collection.mutable
 import scala.collection.mutable.Builder
 
-sealed abstract class Scope extends Product with Serializable
-case object This extends Scope
-case object Global extends Scope
-case object ThisBuild extends Scope
-final case class LocalProject(id: String) extends Scope {
-  override def toString = s"""LocalProject("$id")"""
+sealed abstract class Scope extends Product with Serializable {
+  def thisFold[A](ifThis: A, ifNot: Scope => A): A = if (this == This) ifThis else ifNot(this)
+  def resolveThis(scope: ResolvedScope): ResolvedScope = this match {
+    case This            => scope
+    case Global          => Global
+    case ThisBuild       => ThisBuild
+    case x: LocalProject => x
+  }
 }
+case object This extends Scope
+sealed trait ResolvedScope extends Scope
+case object Global extends ResolvedScope
+case object ThisBuild extends ResolvedScope
+final case class LocalProject(id: String) extends ResolvedScope { override def toString = id }
 
-sealed abstract class Init[+A] {
+sealed abstract class Init[+A] extends Product with Serializable {
   final def map[B](f: A => B): Init[B]                         = Init.Mapped(this, f)
   final def zipWith[B, C](x: Init[B])(f: (A, B) => C): Init[C] = Init.ZipWith(this, x, f)
   final def flatMap[B](f: A => Init[B]): Init[B]               = Init.Bind(this, f)
 
-  final override def toString = Init.toString(this)
+  final override def toString = this match {
+    case Init.Value(x)         => if (x.isInstanceOf[String]) s""""$x"""" else s"$x"
+    case Init.Mapped(init, _)  => s"$init.map(<f>)"
+    case Init.ZipWith(a, b, _) => s"$a.zipWith($b)(<f>)"
+    case Init.Bind(init, _)    => s"$init.flatMap(<f>)"
+    case Key(name, scope)      => scope.thisFold(s"$name", scope => s"$scope / $name")
+  }
 }
 object Init {
-  final case class Value[A](value: A) extends Init[A]
-  final case class Mapped[A, B](init: Init[A], f: A => B) extends Init[B]
+  final case class Value[A](value: A)                                       extends Init[A]
+  final case class Mapped[A, B](init: Init[A], f: A => B)                   extends Init[B]
   final case class ZipWith[A, B, C](a: Init[A], b: Init[B], f: (A, B) => C) extends Init[C]
-  final case class Bind[A, B](init: Init[A], f: A => Init[B]) extends Init[B]
-
-  def toString(init: Init[_], addOp: Boolean = false): String = init match {
-    case Init.Value(x)         => (if (addOp) "  := " else "") + anyToString(x)
-    case Init.Mapped(init, _)  => (if (addOp) " <<= " else "") + toString(init) + ".map(<f>)"
-    case Init.ZipWith(a, b, _) => (if (addOp) " <<= " else "") + toString(a) + ".zipWith(" + toString(b) + ")(<f>)"
-    case Init.Bind(init, _)    => (if (addOp) " <<= " else "") + toString(init) + ".flatMap(<f>)"
-    case key: Key[_]           => (if (addOp) " <<= " else "") + (if (key.scope == This) "" else s"${key.scope} / ") + key.name.value
-  }
-
-  private def anyToString(x: Any) = x match {
-    case s: String => s""""$s""""
-    case _         => s"$x"
-  }
+  final case class Bind[A, B](init: Init[A], f: A => Init[B])               extends Init[B]
 }
 
-final case class Name[A](value: String)
+final case class Name[A](value: String) { override def toString = value }
 
 final case class Key[A](name: Name[A], scope: Scope) extends Init[A] {
   def in(scope: Scope): Key[A]       = Key(name, scope)
@@ -52,15 +52,17 @@ object Key {
 }
 
 final case class Setting[A](key: Key[A], init: Init[A]) {
-  override def toString = key + Init.toString(init, addOp = true)
+  override def toString = {
+    val op = if (init.isInstanceOf[Init[_]]) "  := " else " <<= "
+    key + op + init
+  }
 }
 
-final case class ScopeInitMap(scopeMap: Map[Scope, Init[_]]) {
-  def get(scope: Scope, log: => Nothing): Init[_] = {
+final case class ScopeInitMap(scopeMap: Map[ResolvedScope, Init[_]]) {
+  def get(scope: ResolvedScope, log: => Nothing): Init[_] = {
     def getGlobal    = scopeMap.getOrElse(Global, log)
     def getThisBuild = scopeMap.getOrElse(ThisBuild, getGlobal)
     scope match {
-      case This             => getGlobal
       case Global           => getGlobal
       case ThisBuild        => getThisBuild
       case LocalProject(id) => scopeMap.getOrElse(scope, getThisBuild)
@@ -68,27 +70,22 @@ final case class ScopeInitMap(scopeMap: Map[Scope, Init[_]]) {
   }
 
   override def toString = {
-    if (scopeMap.size <= 1) scopeMap.mkString else
-      scopeMap.iterator.map {
-        case (LocalProject(p), init) => "\n    " + p + " -> " + init
-        case (s, init)               => "\n    " + s + " -> " + init
-      }.mkString("[", "", "\n  ]")
+    if (scopeMap.size <= 1) scopeMap.mkString else scopeMap.iterator
+      .map { case (s, init) => "\n    " + s + " -> " + init }
+      .mkString("[", "", "\n  ]")
   }
 }
 
 final class SettingMap(val settingsMap: scala.collection.Map[Name[_], ScopeInitMap]) {
-  import Main._
+  def getValue[A](key: Key[A]): A = evalInit(key, key.scope.resolveThis(Global))
 
-  def getValue[A](key: Key[A]): A = evalInit(getInit(key, key.scope), key.scope)
-
-  def getInit[A](key: Key[A], scope0: Scope): Init[A] = {
-    val scope = if (key.scope == This) scope0 else key.scope
+  def getInit[A](key: Key[A], scope: ResolvedScope): Init[A] = {
     def log = sys.error(s"no ${Key(key.name, scope)} in $this")
     val init: Init[_] = settingsMap(key.name).get(scope, log)
     init.asInstanceOf[Init[A]] // guaranteed by SettingMap's builder's put signature
   }
 
-  private def evalInit[A](init: Init[A], scope: Scope): A = init match {
+  private def evalInit[A](init: Init[A], scope: ResolvedScope): A = init match {
     case Init.Value(x)         => x
     case Init.Mapped(init, f)  => f(evalInit(init, scope))
     case Init.ZipWith(a, b, f) => f(evalInit(a, scope), evalInit(b, scope))
@@ -96,19 +93,14 @@ final class SettingMap(val settingsMap: scala.collection.Map[Name[_], ScopeInitM
     case key: Key[A]           => evalInit(getInit(key, scope), scope)
   }
 
-  override def toString = {
-    settingsMap
-      .iterator
-      .map(kv => "\n  " + kv._1.value + " -> " + kv._2)
-      .mkString("\nSettingMap [", "", "\n]")
-  }
+  override def toString = settingsMap.mkString("\nSettingMap [\n  ", "\n  ", "\n]")
 }
 
 object SettingMap {
   def newBuilder: Builder0 = new Builder0(mutable.LinkedHashMap.empty)
 
   final class Builder0(b: mutable.LinkedHashMap[Name[_], ScopeInitMap]) {
-    def put[A](k: Key[A], v: Map[Scope, Init[A]]): Builder0 = { b.put(k.name, ScopeInitMap(v)); this }
+    def put[A](k: Key[A], v: Map[ResolvedScope, Init[A]]): Builder0 = { b.put(k.name, ScopeInitMap(v)); this }
     def result: SettingMap = new SettingMap(b)
   }
 }
