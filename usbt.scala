@@ -1,17 +1,17 @@
 package usbt
 
-import scala.collection.immutable
-import scala.collection.mutable
-import scala.collection.mutable.Builder
+import scala.collection.immutable.ListMap
+import scala.collection.mutable.{ Builder, LinkedHashMap }
 
 sealed abstract class Scope extends Product with Serializable {
   def thisFold[A](ifThis: A, ifNot: Scope => A): A = if (this == This) ifThis else ifNot(this)
-  def resolveThis(scope: ResolvedScope): ResolvedScope = this match {
+  def resolve(scope: ResolvedScope): ResolvedScope = this match {
     case This            => scope
     case Global          => Global
     case ThisBuild       => ThisBuild
     case x: LocalProject => x
   }
+  def orGlobal = resolve(Global)
 }
 case object This extends Scope
 sealed trait ResolvedScope extends Scope
@@ -58,7 +58,7 @@ final case class Setting[A](key: Key[A], init: Init[A]) {
   }
 }
 
-final case class ScopeInitMap(scopeMap: Map[ResolvedScope, Init[_]]) {
+final case class ScopeInitMap(scopeMap: ListMap[ResolvedScope, Init[_]]) {
   def get(scope: ResolvedScope, log: => Nothing): Init[_] = {
     def getGlobal    = scopeMap.getOrElse(Global, log)
     def getThisBuild = scopeMap.getOrElse(ThisBuild, getGlobal)
@@ -76,12 +76,12 @@ final case class ScopeInitMap(scopeMap: Map[ResolvedScope, Init[_]]) {
   }
 }
 
-final class SettingMap(val settingsMap: scala.collection.Map[Name[_], ScopeInitMap]) {
-  def getValue[A](key: Key[A]): A = evalInit(key, key.scope.resolveThis(Global))
+final class SettingMap(val settingsMap: ListMap[Name[_], ScopeInitMap]) {
+  def getValue[A](key: Key[A]): A = evalInit(key, key.scope.orGlobal)
 
   def getInit[A](key: Key[A], scope: ResolvedScope): Init[A] = {
     def log = sys.error(s"no ${Key(key.name, scope)} in $this")
-    val init: Init[_] = settingsMap(key.name).get(scope, log)
+    val init: Init[_] = settingsMap.apply(key.name).get(scope, log)
     init.asInstanceOf[Init[A]] // guaranteed by SettingMap's builder's put signature
   }
 
@@ -97,25 +97,26 @@ final class SettingMap(val settingsMap: scala.collection.Map[Name[_], ScopeInitM
 }
 
 object SettingMap {
-  def newBuilder: Builder0 = new Builder0(mutable.LinkedHashMap.empty)
+  def fromVarargs(ss: Setting[_]*): SettingMap = ss.foldLeft(newBuilder)(_.put(_)).result
+  def newBuilder: Builder0 = new Builder0(LinkedHashMap.empty)
 
-  final class Builder0(b: mutable.LinkedHashMap[Name[_], ScopeInitMap]) {
-    def put[A](k: Key[A], v: Map[ResolvedScope, Init[A]]): Builder0 = { b.put(k.name, ScopeInitMap(v)); this }
-    def result: SettingMap = new SettingMap(b)
+  type MapBuilder[K, V, M[_, _]] = Builder[(K, V), M[K, V]]
+
+  final class Builder0(b: LinkedHashMap[Name[_], MapBuilder[ResolvedScope, Init[_], ListMap]]) {
+    def put[A](s: Setting[A]): Builder0 = {
+      b.getOrElseUpdate(s.key.name, ListMap.newBuilder) += s.key.scope.orGlobal -> s.init
+      this
+    }
+    def result: SettingMap = {
+      val settingsMap = b.iterator.foldLeft(ListMap.newBuilder[Name[_], ScopeInitMap]) {
+        case (acc, (name, b)) => acc += name -> ScopeInitMap(b.result)
+      }.result
+      new SettingMap(settingsMap)
+    }
   }
 }
 
 object Main {
-  def groupByKey(ss: Seq[Setting[_]]) = {
-    val zero = Map.empty[Key[_], Builder[Setting[_], Seq[Setting[_]]]]
-    val map: Map[Key[_], Seq[Setting[_]]] = ss
-        .foldLeft(zero)((acc, s) => acc.updated(s.key, acc.getOrElse(s.key, Seq.newBuilder) += s))
-        .iterator
-        .map { case (key, builder) => key -> builder.result() }
-        .toMap
-    println(map.mapValues(_.mkString("[\n    ", "\n    ", "\n  ]")).mkString("Map(\n  ", "\n  ", "\n)"))
-  }
-
   implicit class StringWithSlash(private val self: String) extends AnyVal {
     def /(s: String) = if (self.endsWith("/")) self + s else self + "/" + s
   }
@@ -134,7 +135,7 @@ object Main {
 
     val foo = LocalProject("foo")
 
-    val settingsSeq = Seq(
+    val settingsMap: SettingMap = SettingMap.fromVarargs(
                   srcDir in Global    <<= baseDir.map(_ / "src"),
                targetDir in Global    <<= baseDir.map(_ / "target"),
              scalaSrcDir in Global    <<= srcDir.map(_ / "main/scala"),
@@ -145,18 +146,6 @@ object Main {
       scalaBinaryVersion in ThisBuild  := "2.12",
                  baseDir in foo        := "/foo",
     )
-
-    val settingsMap: SettingMap = SettingMap
-        .newBuilder
-        .put(            srcDir, Map(Global    -> baseDir.map(_ / "src")))
-        .put(         targetDir, Map(Global    -> baseDir.map(_ / "target")))
-        .put(       scalaSrcDir, Map(Global    -> srcDir.map(_ / "main/scala")))
-        .put(           srcDirs, Map(Global    -> scalaSrcDir.zipWith(scalaBinaryVersion)((dir, sbv) => Seq(dir, s"$dir-$sbv"))))
-        .put(    crossTargetDir, Map(Global    -> targetDir.zipWith(scalaBinaryVersion)((target, sbv) => target / s"scala-$sbv")))
-        .put(           baseDir, Map(ThisBuild -> Init.Value("/"), foo -> Init.Value("/foo")))
-        .put(      scalaVersion, Map(ThisBuild -> Init.Value("2.12.8")))
-        .put(scalaBinaryVersion, Map(ThisBuild -> Init.Value("2.12")))
-        .result
 
     println(settingsMap)
 
