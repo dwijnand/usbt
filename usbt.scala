@@ -1,34 +1,73 @@
 package usbt
 
+import scala.collection.GenTraversableOnce
 import scala.collection.immutable
 import scala.collection.mutable
 import scala.collection.mutable.Builder
 
-sealed abstract class Scope extends Product with Serializable
+final class Formatter(wr: java.io.BufferedWriter, var level: Int = 0, var dirty: Boolean = false) {
+  def indented[A](start: String, xs: GenTraversableOnce[A], end: String)(op: A => Unit) = {
+    println(start)
+    level += 1
+    xs.foreach(op)
+    level -= 1
+    println(end)
+  }
+  def newLine               = { wr.newLine(); dirty = false }
+  def print(s: String)      = { if (!dirty) wr.write("  " * level); wr.write(s); dirty = true }
+  def println(s: String)    = { print(s); newLine }
+}
+
+trait Display {
+  def fmt(f: Formatter): Unit
+}
+
+trait SelfDisplay extends Display {
+  final override def toString = {
+    val sw = new java.io.StringWriter()
+    val bw = new java.io.BufferedWriter(sw)
+    fmt(new Formatter(bw))
+    bw.flush()
+    sw.toString
+  }
+}
+
+sealed abstract class Scope extends Product with Serializable with SelfDisplay {
+  def fmt(f: Formatter): Unit = this match {
+    case This             => f.print("This")
+    case Global           => f.print("Global")
+    case ThisBuild        => f.print("ThisBuild")
+    case LocalProject(id) => f.print(id)
+  }
+}
 case object This extends Scope
 case object Global extends Scope
 case object ThisBuild extends Scope
-final case class LocalProject(id: String) extends Scope {
-  override def toString = s"""LocalProject("$id")"""
-}
+final case class LocalProject(id: String) extends Scope
 
-sealed abstract class Init[+A] {
+sealed abstract class Init[+A] extends SelfDisplay {
   final def map[B](f: A => B): Init[B]                         = Init.Mapped(this, f)
   final def flatMap[B](f: A => Init[B]): Init[B]               = Init.Bind(this, f)
   final def zipWith[B, C](x: Init[B])(f: (A, B) => C): Init[C] = flatMap(a => x.map(b => f(a, b)))
 
-  final override def toString = Init.toString(this)
+  def fmt(f: Formatter) = Init.toString(f, this)
 }
 object Init {
   final case class Value[A](value: A) extends Init[A]
   final case class Mapped[A, B](init: Init[A], f: A => B) extends Init[B]
   final case class Bind[A, B](init: Init[A], f: A => Init[B]) extends Init[B]
 
-  def toString(init: Init[_], addOp: Boolean = false): String = init match {
-    case Init.Value(x)        => (if (addOp) "  := " else "") + anyToString(x)
-    case Init.Mapped(init, _) => (if (addOp) " <<= " else "") + toString(init) + ".map(<f>)"
-    case Init.Bind(init, _)   => (if (addOp) " <<= " else "") + toString(init) + ".flatMap(<f>)"
-    case key: Key[_]          => (if (addOp) " <<= " else "") + (if (key.scope == This) "" else s"${key.scope} / ") + key.name.value
+  def toString(f: Formatter, init: Init[_], addOp: Boolean = false) = init match {
+    case Init.Value(x)        => if (addOp) f.print("  := "); f.print(anyToString(x))
+    case Init.Mapped(init, _) => if (addOp) f.print(" <<= "); init.fmt(f); f.print(".map(<f>)")
+    case Init.Bind(init, _)   => if (addOp) f.print(" <<= "); init.fmt(f); f.print(".flatMap(<f>)")
+    case key: Key[_]          =>
+      if (addOp) f.print(" <<= ")
+      if (key.scope != This) {
+        key.scope.fmt(f)
+        f.print(" / ")
+      }
+      f.print(key.name.value)
   }
 
   private def anyToString(x: Any) = x match {
@@ -49,11 +88,11 @@ object Key {
   def apply[A](name: String): Key[A] = Key(Name(name), This)
 }
 
-final case class Setting[A](key: Key[A], init: Init[A]) {
-  override def toString = key + Init.toString(init, addOp = true)
+final case class Setting[A](key: Key[A], init: Init[A]) extends SelfDisplay {
+  def fmt(f: Formatter) = { key.fmt(f); init.fmt(f) }
 }
 
-final case class ScopeInitMap(scopeMap: Map[Scope, Init[_]]) {
+final case class ScopeInitMap(scopeMap: Map[Scope, Init[_]]) extends SelfDisplay {
   def get(scope: Scope, log: => Nothing): Init[_] = {
     def getGlobal    = scopeMap.getOrElse(Global, log)
     def getThisBuild = scopeMap.getOrElse(ThisBuild, getGlobal)
@@ -65,16 +104,20 @@ final case class ScopeInitMap(scopeMap: Map[Scope, Init[_]]) {
     }
   }
 
-  override def toString = {
-    if (scopeMap.size <= 1) scopeMap.mkString else
-      scopeMap.iterator.map {
-        case (LocalProject(p), init) => "\n    " + p + " -> " + init
-        case (s, init)               => "\n    " + s + " -> " + init
-      }.mkString("[", "", "\n  ]")
+  def fmt(f: Formatter) = {
+    if (scopeMap.size <= 1) f.print(scopeMap.mkString) else {
+      f.indented("[", scopeMap, "]") { case (scope, init) =>
+        scope.fmt(f)
+        f.print(" -> ")
+        init.fmt(f)
+        f.newLine
+      }
+    }
+    f.newLine
   }
 }
 
-final class SettingMap(val settingsMap: scala.collection.Map[Name[_], ScopeInitMap]) {
+final class SettingMap(val settingsMap: scala.collection.Map[Name[_], ScopeInitMap]) extends SelfDisplay {
   import Main._
 
   def getValue[A](key: Key[A]): A = evalInit(getInit(key, key.scope), key.scope)
@@ -93,11 +136,11 @@ final class SettingMap(val settingsMap: scala.collection.Map[Name[_], ScopeInitM
     case key: Key[A]                                            => evalInit(getInit(key, scope), scope)
   }
 
-  override def toString = {
-    settingsMap
-      .iterator
-      .map(kv => "\n  " + kv._1.value + " -> " + kv._2)
-      .mkString("\nSettingMap [", "", "\n]")
+  def fmt(f: Formatter) = {
+    f.indented("\nSettingMap [", settingsMap, "]") { case (name, scopeInitMap) =>
+      f.print(s"${name.value} -> ")
+      scopeInitMap.fmt(f)
+    }
   }
 }
 
@@ -166,8 +209,8 @@ object Main {
     println(settingsMap)
 
     def check[A](key: Key[A], expected: A) = {
-      val actual = settingsMap.getValue(key)
-      if (actual != expected) println(s"Expected $expected, Actual $actual")
+//      val actual = settingsMap.getValue(key)
+//      if (actual != expected) println(s"Expected $expected, Actual $actual")
     }
 
     check(srcDir in ThisBuild,    "/src")
