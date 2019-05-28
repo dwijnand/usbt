@@ -1,5 +1,8 @@
 package usbt
 
+import scala.collection.mutable
+import scala.collection.mutable.Builder
+
 sealed abstract class Scope extends Product with Serializable
 case object This extends Scope
 case object Global extends Scope
@@ -59,6 +62,15 @@ final class SettingMap(val settingsMap: Map[Name[_], Map[Scope, Init[_]]]) {
   }
 }
 
+object SettingMap {
+  def newBuilder: Builder0 = new Builder0(mutable.HashMap.empty)
+
+  final class Builder0(b: mutable.HashMap[Name[_], Map[Scope, Init[_]]]) {
+    def put[A](k: Key[A], v: Map[Scope, Init[A]]): Builder0 = { b.put(k.name, v); this }
+    def result: SettingMap = new SettingMap(b.toMap)
+  }
+}
+
 object Main {
 
   def anyToString(x: Any) = x match {
@@ -78,7 +90,6 @@ object Main {
   def settingToString(s: Setting[_]) = keyToString(s.key) + initToString(s.init, addOp = true)
 
   def groupByKey(ss: Seq[Setting[_]]) = {
-    import scala.collection.mutable.Builder
     val zero = Map.empty[Key[_], Builder[Setting[_], Seq[Setting[_]]]]
     val map: Map[Key[_], Seq[Setting[_]]] = ss
         .foldLeft(zero)((acc, s) => acc.updated(s.key, acc.getOrElse(s.key, Seq.newBuilder) += s))
@@ -124,19 +135,17 @@ object Main {
                  baseDir in foo        := "/foo",
     )
 
-    val settingsMap: SettingMap = new SettingMap(Map(
-        baseDir.name -> Map(
-          ThisBuild -> Init.Value("/"),
-                foo -> Init.Value("/foo"),
-        ),
-              srcDir.name -> Map(Global -> baseDir.map(pathAppend(_, "src"))),
-           targetDir.name -> Map(Global -> baseDir.map(pathAppend(_, "target"))),
-         scalaSrcDir.name -> Map(Global -> srcDir.map(pathAppend(_, "main/scala"))),
-             srcDirs.name -> Map(Global -> scalaSrcDir.zipWith(scalaBinaryVersion)((dir, sbv) => Seq(dir, s"$dir-$sbv"))),
-      crossTargetDir.name -> Map(Global -> targetDir.zipWith(scalaBinaryVersion)((target, sbv) => pathAppend(target, s"scala-$sbv"))),
-      scalaVersion.name -> Map(ThisBuild -> Init.Value("2.12.8")),
-      scalaBinaryVersion.name -> Map(ThisBuild -> Init.Value("2.12")),
-    ))
+    val settingsMap: SettingMap = SettingMap
+        .newBuilder
+        .put(           baseDir, Map(ThisBuild -> Init.Value("/"), foo -> Init.Value("/foo")))
+        .put(            srcDir, Map(Global    -> baseDir.map(pathAppend(_, "src"))))
+        .put(         targetDir, Map(Global    -> baseDir.map(pathAppend(_, "target"))))
+        .put(       scalaSrcDir, Map(Global    -> srcDir.map(pathAppend(_, "main/scala"))))
+        .put(           srcDirs, Map(Global    -> scalaSrcDir.zipWith(scalaBinaryVersion)((dir, sbv) => Seq(dir, s"$dir-$sbv"))))
+        .put(    crossTargetDir, Map(Global    -> targetDir.zipWith(scalaBinaryVersion)((target, sbv) => pathAppend(target, s"scala-$sbv"))))
+        .put(      scalaVersion, Map(ThisBuild -> Init.Value("2.12.8")))
+        .put(scalaBinaryVersion, Map(ThisBuild -> Init.Value("2.12")))
+        .result
 
     def check[A](key: Key[A], expected: A) = {
       val actual = settingsMap.getValue(key)
