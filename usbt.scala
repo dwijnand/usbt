@@ -14,21 +14,23 @@ final case class LocalProject(id: String) extends Scope {
 
 sealed abstract class Init[+A] {
   final def map[B](f: A => B): Init[B]                         = Init.Mapped(this, f)
+  final def zipWith[B, C](x: Init[B])(f: (A, B) => C): Init[C] = Init.ZipWith(this, x, f)
   final def flatMap[B](f: A => Init[B]): Init[B]               = Init.Bind(this, f)
-  final def zipWith[B, C](x: Init[B])(f: (A, B) => C): Init[C] = flatMap(a => x.map(b => f(a, b)))
 
   final override def toString = Init.toString(this)
 }
 object Init {
   final case class Value[A](value: A) extends Init[A]
   final case class Mapped[A, B](init: Init[A], f: A => B) extends Init[B]
+  final case class ZipWith[A, B, C](a: Init[A], b: Init[B], f: (A, B) => C) extends Init[C]
   final case class Bind[A, B](init: Init[A], f: A => Init[B]) extends Init[B]
 
   def toString(init: Init[_], addOp: Boolean = false): String = init match {
-    case Init.Value(x)        => (if (addOp) "  := " else "") + anyToString(x)
-    case Init.Mapped(init, _) => (if (addOp) " <<= " else "") + toString(init) + ".map(<f>)"
-    case Init.Bind(init, _)   => (if (addOp) " <<= " else "") + toString(init) + ".flatMap(<f>)"
-    case key: Key[_]          => (if (addOp) " <<= " else "") + (if (key.scope == This) "" else s"${key.scope} / ") + key.name.value
+    case Init.Value(x)         => (if (addOp) "  := " else "") + anyToString(x)
+    case Init.Mapped(init, _)  => (if (addOp) " <<= " else "") + toString(init) + ".map(<f>)"
+    case Init.ZipWith(a, b, _) => (if (addOp) " <<= " else "") + toString(a) + ".zipWith(" + toString(b) + ")(<f>)"
+    case Init.Bind(init, _)    => (if (addOp) " <<= " else "") + toString(init) + ".flatMap(<f>)"
+    case key: Key[_]           => (if (addOp) " <<= " else "") + (if (key.scope == This) "" else s"${key.scope} / ") + key.name.value
   }
 
   private def anyToString(x: Any) = x match {
@@ -87,10 +89,11 @@ final class SettingMap(val settingsMap: scala.collection.Map[Name[_], ScopeInitM
   }
 
   private def evalInit[A](init: Init[A], scope: Scope): A = init match {
-    case Init.Value(x)        => x
-    case Init.Mapped(init, f) => f(evalInit(init, scope))
-    case Init.Bind(init, f)   => evalInit(f(evalInit(init, scope)), scope)
-    case key: Key[A]          => evalInit(getInit(key, scope), scope)
+    case Init.Value(x)         => x
+    case Init.Mapped(init, f)  => f(evalInit(init, scope))
+    case Init.ZipWith(a, b, f) => f(evalInit(a, scope), evalInit(b, scope))
+    case Init.Bind(init, f)    => evalInit(f(evalInit(init, scope)), scope)
+    case key: Key[A]           => evalInit(getInit(key, scope), scope)
   }
 
   override def toString = {
@@ -153,12 +156,12 @@ object Main {
 
     val settingsMap: SettingMap = SettingMap
         .newBuilder
-        .put(           baseDir, Map(ThisBuild -> Init.Value("/"), foo -> Init.Value("/foo")))
         .put(            srcDir, Map(Global    -> baseDir.map(_ / "src")))
         .put(         targetDir, Map(Global    -> baseDir.map(_ / "target")))
         .put(       scalaSrcDir, Map(Global    -> srcDir.map(_ / "main/scala")))
         .put(           srcDirs, Map(Global    -> scalaSrcDir.zipWith(scalaBinaryVersion)((dir, sbv) => Seq(dir, s"$dir-$sbv"))))
         .put(    crossTargetDir, Map(Global    -> targetDir.zipWith(scalaBinaryVersion)((target, sbv) => target / s"scala-$sbv")))
+        .put(           baseDir, Map(ThisBuild -> Init.Value("/"), foo -> Init.Value("/foo")))
         .put(      scalaVersion, Map(ThisBuild -> Init.Value("2.12.8")))
         .put(scalaBinaryVersion, Map(ThisBuild -> Init.Value("2.12")))
         .result
