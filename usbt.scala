@@ -4,6 +4,7 @@ sealed abstract class Scope extends Product with Serializable
 case object This extends Scope
 case object Global extends Scope
 case object ThisBuild extends Scope
+final case class LocalProject(id: String) extends Scope
 
 sealed abstract class Init[+A] {
   final def map[B](f: A => B): Init[B] = Init.Mapped(this, f)
@@ -72,15 +73,21 @@ object Main {
     val baseDir = Key[String]("baseDir")
     val  srcDir = Key[String]( "srcDir")
 
+    val foo = LocalProject("foo")
+
     def pathAppend(a: String, b: String) = if (a.endsWith("/")) a + b else a + "/" + b
 
     val settingsSeq = Seq(
        srcDir in Global    <<= baseDir.map(pathAppend(_, "src")),
       baseDir in ThisBuild  := "/",
+      baseDir in foo        := "/foo",
     )
 
     val settingsMap: Map[Name[String], Map[Scope, Init[String]]] = Map(
-      baseDir.name -> Map(ThisBuild -> Init.Value("/")),
+      baseDir.name -> Map(
+        ThisBuild -> Init.Value("/"),
+              foo -> Init.Value("/foo"),
+      ),
        srcDir.name -> Map(Global    -> baseDir.map(pathAppend(_, "src"))),
     )
 
@@ -88,10 +95,13 @@ object Main {
       def lookup(key: Key[String]) = {
         val scopeMap = settingsMap(key.name)
         def log = sys.error(s"no ${keyToString(key)} in ${settingMapToString(settingsMap)}")
+        def getGlobal    = scopeMap.getOrElse(Global, log)
+        def getThisBuild = scopeMap.getOrElse(ThisBuild, getGlobal)
         key.scope match {
-          case This      => scopeMap.getOrElse(if (key1.scope == This) Global else key1.scope, log)
-          case Global    => scopeMap.getOrElse(Global, log)
-          case ThisBuild => scopeMap.get(ThisBuild).getOrElse(scopeMap.getOrElse(Global, log))
+          case This             => scopeMap.getOrElse(if (key1.scope == This) Global else key1.scope, log)
+          case Global           => getGlobal
+          case ThisBuild        => getThisBuild
+          case LocalProject(id) => scopeMap.getOrElse(key.scope, getThisBuild)
         }
       }
       def evalInit(init: Init[String]): String = init match {
@@ -104,5 +114,6 @@ object Main {
     }
 
     check(srcDir in ThisBuild, "/src")
+    check(srcDir in foo,       "/foo/src")
   }
 }
