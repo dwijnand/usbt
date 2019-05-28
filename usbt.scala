@@ -70,19 +70,21 @@ object Main {
   // add tasks
   // add input tasks
   def main(args: Array[String]): Unit = {
-    val   baseDir = Key[String](   "baseDir")
-    val    srcDir = Key[String](    "srcDir")
-    val targetDir = Key[String]( "targetDir")
+    val   baseDir    = Key[String](   "baseDir")
+    val    srcDir    = Key[String](    "srcDir")
+    val targetDir    = Key[String]( "targetDir")
+    val scalaVersion = Key[String]("scalaVersion")
 
     val foo = LocalProject("foo")
 
     def pathAppend(a: String, b: String) = if (a.endsWith("/")) a + b else a + "/" + b
 
     val settingsSeq = Seq(
-         srcDir in Global    <<= baseDir.map(pathAppend(_, "src")),
-      targetDir in Global    <<= baseDir.map(pathAppend(_, "target")),
-        baseDir in ThisBuild  := "/",
-        baseDir in foo        := "/foo",
+            srcDir in Global    <<= baseDir.map(pathAppend(_, "src")),
+         targetDir in Global    <<= baseDir.map(pathAppend(_, "target")),
+           baseDir in ThisBuild  := "/",
+      scalaVersion in ThisBuild  := "2.12.8",
+           baseDir in foo        := "/foo",
     )
 
     val settingsMap: Map[Name[String], Map[Scope, Init[String]]] = Map(
@@ -92,6 +94,7 @@ object Main {
       ),
          srcDir.name -> Map(Global -> baseDir.map(pathAppend(_, "src"))),
       targetDir.name -> Map(Global -> baseDir.map(pathAppend(_, "target"))),
+      scalaVersion.name -> Map(ThisBuild -> Init.Value("2.12.8")),
     )
 
     def check(key1: Key[String], expected: String) = {
@@ -121,5 +124,7 @@ object Main {
 
     check(targetDir in ThisBuild, "/target")
     check(targetDir in foo,       "/foo/target")
+
+    check(scalaVersion in foo, "2.12.8")
   }
 }
