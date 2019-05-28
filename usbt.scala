@@ -34,24 +34,29 @@ object Key {
 
 final case class Setting[A](key: Key[A], init: Init[A])
 
-final class SettingMap(val settingsMap: Map[Name[_], Map[Scope, Init[_]]]) {
+final case class ScopeInitMap(scopeMap: Map[Scope, Init[_]]) {
+  def get(scope: Scope, log: => Nothing): Init[_] = {
+    def getGlobal    = scopeMap.getOrElse(Global, log)
+    def getThisBuild = scopeMap.getOrElse(ThisBuild, getGlobal)
+    scope match {
+      case This             => getGlobal
+      case Global           => getGlobal
+      case ThisBuild        => getThisBuild
+      case LocalProject(id) => scopeMap.getOrElse(scope, getThisBuild)
+    }
+  }
+}
+
+final class SettingMap(val settingsMap: Map[Name[_], ScopeInitMap]) {
   import Main._
 
   def getValue[A](key: Key[A]): A = evalInit(getInit(key, key.scope), key.scope)
 
   def getInit[A](key: Key[A], scope0: Scope): Init[A] = {
     val scope = if (key.scope == This) scope0 else key.scope
-    val scopeMap = settingsMap(key.name)
     def log = sys.error(s"no ${keyToString(Key(key.name, scope))} in ${settingMapToString(this)}")
-    def getGlobal    = scopeMap.getOrElse(Global, log)
-    def getThisBuild = scopeMap.getOrElse(ThisBuild, getGlobal)
-    val init: Init[_] = scope match {
-      case This             => getGlobal
-      case Global           => getGlobal
-      case ThisBuild        => getThisBuild
-      case LocalProject(id) => scopeMap.getOrElse(scope, getThisBuild)
-    }
-    init.asInstanceOf[Init[A]]
+    val init: Init[_] = settingsMap(key.name).get(scope, log)
+    init.asInstanceOf[Init[A]] // guaranteed by SettingMap's builder's put signature
   }
 
   private def evalInit[A](init: Init[A], scope: Scope): A = init match {
@@ -65,8 +70,8 @@ final class SettingMap(val settingsMap: Map[Name[_], Map[Scope, Init[_]]]) {
 object SettingMap {
   def newBuilder: Builder0 = new Builder0(mutable.HashMap.empty)
 
-  final class Builder0(b: mutable.HashMap[Name[_], Map[Scope, Init[_]]]) {
-    def put[A](k: Key[A], v: Map[Scope, Init[A]]): Builder0 = { b.put(k.name, v); this }
+  final class Builder0(b: mutable.HashMap[Name[_], ScopeInitMap]) {
+    def put[A](k: Key[A], v: Map[Scope, Init[A]]): Builder0 = { b.put(k.name, ScopeInitMap(v)); this }
     def result: SettingMap = new SettingMap(b.toMap)
   }
 }
@@ -104,7 +109,7 @@ object Main {
   }
 
   def settingMapToString(map: SettingMap) = {
-    map.settingsMap.map(kv => kv._1.value -> kv._2.map(kv => kv._1 -> initToString(kv._2)).mkString("Map(\n    ", "\n    ", "\n  )")).mkString("\nMap(\n  ", "\n  ", "\n)")
+    map.settingsMap.map(kv => kv._1.value -> kv._2.scopeMap.map(kv => kv._1 -> initToString(kv._2)).mkString("Map(\n    ", "\n    ", "\n  )")).mkString("\nMap(\n  ", "\n  ", "\n)")
   }
 
   // add tasks
