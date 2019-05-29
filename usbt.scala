@@ -5,13 +5,13 @@ import scala.collection.mutable.{ Builder, LinkedHashMap }
 
 sealed abstract class Scope extends Product with Serializable {
   def thisFold[A](ifThis: A, ifNot: Scope => A): A = if (this == This) ifThis else ifNot(this)
-  def resolve(scope: ResolvedScope): ResolvedScope = this match {
+  def or(scope: ResolvedScope): ResolvedScope = this match {
     case This            => scope
     case Global          => Global
     case ThisBuild       => ThisBuild
     case x: LocalProject => x
   }
-  def orGlobal = resolve(Global)
+  def orGlobal = or(Global)
 }
 case object This extends Scope
 sealed trait ResolvedScope extends Scope
@@ -52,48 +52,53 @@ object Key {
 }
 
 final case class Setting[A](key: Key[A], init: Init[A]) {
-  override def toString = {
-    val op = if (init.isInstanceOf[Init[_]]) "  := " else " <<= "
-    key + op + init
-  }
+  override def toString = key + (if (init.isInstanceOf[Init[_]]) "  := " else " <<= ") + init
 }
 
-final case class ScopeInitMap(scopeMap: ListMap[ResolvedScope, Init[_]]) {
-  def get(scope: ResolvedScope, log: => Nothing): Init[_] = {
-    def getGlobal    = scopeMap.getOrElse(Global, log)
-    def getThisBuild = scopeMap.getOrElse(ThisBuild, getGlobal)
+final case class ScopeInitMap(self: ListMap[ResolvedScope, Init[_]]) {
+  def getOrElse(scope: ResolvedScope, default: => Init[_]): Init[_] = {
+    def getGlobal    = self.getOrElse(Global, default)
+    def getThisBuild = self.getOrElse(ThisBuild, getGlobal)
     scope match {
       case Global           => getGlobal
       case ThisBuild        => getThisBuild
-      case LocalProject(id) => scopeMap.getOrElse(scope, getThisBuild)
+      case LocalProject(id) => self.getOrElse(scope, getThisBuild)
     }
   }
 
-  override def toString = {
-    if (scopeMap.size <= 1) scopeMap.mkString else scopeMap.iterator
-      .map { case (s, init) => "\n    " + s + " -> " + init }
-      .mkString("[", "", "\n  ]")
-  }
+  override def toString = if (self.size <= 1) self.mkString else self.mkString("[ ", ", ", " ]")
 }
 
-final class SettingMap(val settingsMap: ListMap[Name[_], ScopeInitMap]) {
+object ScopeInitMap {
+  val empty = ScopeInitMap(ListMap.empty)
+}
+
+final case class SettingMap private (self: ListMap[Name[_], ScopeInitMap]) {
   def getValue[A](key: Key[A]): A = evalInit(key, key.scope.orGlobal)
 
   def getInit[A](key: Key[A], scope: ResolvedScope): Init[A] = {
-    def log = sys.error(s"no ${Key(key.name, scope)} in $this")
-    val init: Init[_] = settingsMap.apply(key.name).get(scope, log)
-    init.asInstanceOf[Init[A]] // guaranteed by SettingMap's builder's put signature
+    val res = self
+        .getOrElse(key.name, ScopeInitMap.empty)
+        .getOrElse(scope, sys.error(s"no $scope / ${key.name} in $this"))
+        .asInstanceOf[Init[A]] // guaranteed by SettingMap's builder's put signature
+//    println(s"getInit($key, $scope) = $res")
+    res
   }
 
-  private def evalInit[A](init: Init[A], scope: ResolvedScope): A = init match {
-    case Init.Value(x)         => x
-    case Init.Mapped(init, f)  => f(evalInit(init, scope))
-    case Init.ZipWith(a, b, f) => f(evalInit(a, scope), evalInit(b, scope))
-    case Init.Bind(init, f)    => evalInit(f(evalInit(init, scope)), scope)
-    case key: Key[A]           => evalInit(getInit(key, scope), scope)
+  private def evalInit[A](init: Init[A], scope: ResolvedScope): A = {
+//    println(s"evalInit($init, $scope)")
+    val res = init match {
+      case Init.Value(x)         => x
+      case Init.Mapped(init, f)  => f(evalInit(init, scope))
+      case Init.ZipWith(a, b, f) => f(evalInit(a, scope), evalInit(b, scope))
+      case Init.Bind(init, f)    => evalInit(f(evalInit(init, scope)), scope)
+      case key: Key[A]           => evalInit(getInit(key, key.scope.or(scope)), key.scope.or(scope))
+    }
+//    println(s"evalInit($init, $scope) = $res")
+    res
   }
 
-  override def toString = settingsMap.mkString("\nSettingMap [\n  ", "\n  ", "\n]")
+  override def toString = self.mkString("SettingMap [\n  ", "\n  ", "\n]")
 }
 
 object SettingMap {
@@ -126,58 +131,73 @@ object Main {
   def main(args: Array[String]): Unit = {
     val bippy = LocalProject("bippy")
 
-    val        baseDir     = Key[String](       "baseDir")
-    val         srcDir     = Key[String](        "srcDir")
-    val      targetDir     = Key[String](     "targetDir")
-    val    scalaSrcDir     = Key[String](   "scalaSrcDir")
-    val        srcDirs     = Key[Seq[String]]("srcDirs")
-    val crossTargetDir     = Key[String]("crossTargetDir")
-    val scalaVersion       = Key[String]("scalaVersion")
-    val scalaBinaryVersion = Key[String]("scalaBinaryVersion")
-
     val foo = Key[String]("foo")
     val bar = Key[String]("bar")
     val baz = Key[String]("baz")
 
-    val settingsMap: SettingMap = SettingMap.fromVarargs(
-                  srcDir in Global    <<= baseDir.map(_ / "src"),
-               targetDir in Global    <<= baseDir.map(_ / "target"),
-             scalaSrcDir in Global    <<= srcDir.map(_ / "main/scala"),
-                 srcDirs in Global    <<= scalaSrcDir.zipWith(scalaBinaryVersion)((dir, sbv) => Seq(dir, s"$dir-$sbv")),
-          crossTargetDir in Global    <<= targetDir.zipWith(scalaBinaryVersion)((target, sbv) => target / s"scala-$sbv"),
-                 baseDir in ThisBuild  := "/",
-      scalaVersion       in ThisBuild  := "2.12.8",
-      scalaBinaryVersion in ThisBuild  := "2.12",
-                 baseDir in bippy      := "/bippy",
-    )
-
-    println(settingsMap)
-
     def assertEquals[A](actual: A, expected: A, desc: String = "") = {
-      if (actual != expected) {
-        if (desc == "")
-          println(s"Expected $expected, Actual $actual")
-        else
+      if (actual != expected)
+        if (desc == "") println(s"Expected $expected, Actual $actual") else
           println(s"For $desc: Expected $expected, Actual $actual")
-      }
     }
 
     def assertKey[A](settingsMap: SettingMap)(key: Key[A], expected: A) = {
       assertEquals(settingsMap.getValue(key), expected, key.toString)
     }
-    def check[A](key: Key[A], expected: A) = assertKey(settingsMap)(key, expected)
 
-    check(srcDir in ThisBuild,    "/src")
-    check(srcDir in bippy,        "/bippy/src")
+    def ignore(x: => Any) = ()
 
-    check(targetDir in ThisBuild, "/target")
-    check(targetDir in bippy,     "/bippy/target")
+    {
+      val        baseDir     = Key[String](       "baseDir")
+      val         srcDir     = Key[String](        "srcDir")
+      val      targetDir     = Key[String](     "targetDir")
+      val    scalaSrcDir     = Key[String](   "scalaSrcDir")
+      val        srcDirs     = Key[Seq[String]]("srcDirs")
+      val crossTargetDir     = Key[String]("crossTargetDir")
+      val scalaVersion       = Key[String]("scalaVersion")
+      val scalaBinaryVersion = Key[String]("scalaBinaryVersion")
 
-    check(scalaVersion in bippy, "2.12.8")
-    check(scalaBinaryVersion in bippy, "2.12")
+      val settingsMap: SettingMap = SettingMap.fromVarargs(
+                    srcDir in Global    <<= baseDir.map(_ / "src"),
+                 targetDir in Global    <<= baseDir.map(_ / "target"),
+               scalaSrcDir in Global    <<= srcDir.map(_ / "main/scala"),
+                   srcDirs in Global    <<= scalaSrcDir.zipWith(scalaBinaryVersion)((dir, sbv) => Seq(dir, s"$dir-$sbv")),
+            crossTargetDir in Global    <<= targetDir.zipWith(scalaBinaryVersion)((target, sbv) => target / s"scala-$sbv"),
+                   baseDir in ThisBuild  := "/",
+        scalaVersion       in ThisBuild  := "2.12.8",
+        scalaBinaryVersion in ThisBuild  := "2.12",
+                   baseDir in bippy      := "/bippy",
+      )
 
-    check(   scalaSrcDir in bippy, "/bippy/src/main/scala")
-    check(       srcDirs in bippy, Seq("/bippy/src/main/scala", "/bippy/src/main/scala-2.12"))
-    check(crossTargetDir in bippy, "/bippy/target/scala-2.12")
+//      println(settingsMap)
+
+      def check[A](key: Key[A], expected: A) = assertKey(settingsMap)(key, expected)
+
+      check(srcDir in ThisBuild,    "/src")
+      check(srcDir in bippy,        "/bippy/src")
+
+      check(targetDir in ThisBuild, "/target")
+      check(targetDir in bippy,     "/bippy/target")
+
+      check(scalaVersion in bippy, "2.12.8")
+      check(scalaBinaryVersion in bippy, "2.12")
+
+      check(   scalaSrcDir in bippy, "/bippy/src/main/scala")
+      check(       srcDirs in bippy, Seq("/bippy/src/main/scala", "/bippy/src/main/scala-2.12"))
+      check(crossTargetDir in bippy, "/bippy/target/scala-2.12")
+    }
+
+    {
+      val settingsMap = SettingMap.fromVarargs(
+        foo in Global  := "g",
+        foo in bippy   := "b",
+        bar in bippy  <<= foo,
+        baz in bippy  <<= foo in Global,
+      )
+//      println(settingsMap)
+      def check[A](key: Key[A], expected: A) = assertKey(settingsMap)(key, expected)
+      assertKey(settingsMap)(bar in bippy, "b")
+      assertKey(settingsMap)(baz in bippy, "g")
+    }
   }
 }
