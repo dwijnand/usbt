@@ -3,6 +3,8 @@ package usbt
 import scala.collection.immutable.ListMap
 import scala.collection.mutable.{ Builder, LinkedHashMap }
 
+final case class Name[A](value: String) { override def toString = value }
+
 sealed abstract class Scope extends Product with Serializable {
   def thisFold[A](ifThis: A, ifNot: Scope => A): A = if (this == This) ifThis else ifNot(this)
   def or(scope: ResolvedScope): ResolvedScope = this match {
@@ -18,6 +20,16 @@ sealed trait ResolvedScope extends Scope
 case object Global extends ResolvedScope
 case object ThisBuild extends ResolvedScope
 final case class LocalProject(id: String) extends ResolvedScope { override def toString = id }
+
+final case class Key[A](name: Name[A], scope: Scope) extends Init[A] {
+  def in(scope: Scope): Key[A]       = Key(name, scope)
+  def <<=(init: Init[A]): Setting[A] = Setting(this, init)
+  def :=(value: A): Setting[A]       = this <<= Init.Value(value)
+}
+
+object Key {
+  def apply[A](name: String): Key[A] = Key(Name(name), This)
+}
 
 sealed abstract class Init[+A] extends Product with Serializable {
   final def map[B](f: A => B): Init[B]                         = Init.Mapped(this, f)
@@ -37,18 +49,6 @@ object Init {
   final case class Mapped[A, B](init: Init[A], f: A => B)                   extends Init[B]
   final case class ZipWith[A, B, C](a: Init[A], b: Init[B], f: (A, B) => C) extends Init[C]
   final case class Bind[A, B](init: Init[A], f: A => Init[B])               extends Init[B]
-}
-
-final case class Name[A](value: String) { override def toString = value }
-
-final case class Key[A](name: Name[A], scope: Scope) extends Init[A] {
-  def in(scope: Scope): Key[A]       = Key(name, scope)
-  def <<=(init: Init[A]): Setting[A] = Setting(this, init)
-  def :=(value: A): Setting[A]       = this <<= Init.Value(value)
-}
-
-object Key {
-  def apply[A](name: String): Key[A] = Key(Name(name), This)
 }
 
 final case class Setting[A](key: Key[A], init: Init[A]) {
