@@ -3,16 +3,24 @@ package usbt
 import scala.collection.immutable.ListMap
 import scala.collection.mutable.{ Builder, LinkedHashMap }
 
-sealed trait Name {
+import Name.Name
+import Key.Key
+import Init.Init
+import Setting.Setting
+
+sealed trait AnyName {
   type Type
   def value: String
   override def toString = value
 }
 
 object Name {
-  type Of[A] = Name { type Type = A }
-  def apply[A](value: String): Name.Of[A] = NameOf[A](value)
-  final private case class NameOf[A](value: String) extends Name { type Type = A }
+  type Name[A] = AnyName { type Type = A }
+
+  def apply[A](value: String): Name[A]     = NameImpl(value)
+  def unapply(name: AnyName): Some[String] = Some(name.value)
+
+  final case class NameImpl[A](value: String) extends AnyName { type Type = A }
 }
 
 sealed abstract class Scope extends Product with Serializable {
@@ -31,32 +39,34 @@ case object Global extends ResolvedScope
 case object ThisBuild extends ResolvedScope
 final case class LocalProject(id: String) extends ResolvedScope { override def toString = id }
 
-sealed trait Key extends Init {
+sealed trait AnyKey extends AnyInit {
   private type A = Type
 
-  def name: Name.Of[A]
+  def name: Name[A]
   def scope: Scope
 
-  def in(scope: Scope): Key.Of[A]          = Key(name, scope)
-  def <<=(init: Init.Of[A]): Setting.Of[A] = Setting(this, init)
-  def :=(value: A): Setting.Of[A]          = this <<= Init.Value(value)
+  def in(scope: Scope): Key[A]       = Key(name, scope)
+  def <<=(init: Init[A]): Setting[A] = Setting(this, init)
+  def :=(value: A): Setting[A]       = this <<= Init.Value(value)
 }
 
 object Key {
-  type Of[T] = Key { type Type = T }
-  def apply[A](name: String): Key.Of[A]                   = KeyOf(Name(name), This)
-  def apply[A](name: Name.Of[A], scope: Scope): Key.Of[A] = KeyOf(name, scope)
-  def unapply(key: Key): Some[(Name.Of[key.Type], Scope)] = Some((key.name, key.scope))
-  final private case class KeyOf[A](name: Name.Of[A], scope: Scope) extends Key { type Type = A }
+  type Key[A] = AnyKey { type Type = A }
+
+  def apply[A](name: String): Key[A]                      = KeyImpl(Name(name), This)
+  def apply[A](name: Name[A], scope: Scope): Key[A]       = KeyImpl(name, scope)
+  def unapply(key: AnyKey): Some[(Name[key.Type], Scope)] = Some((key.name, key.scope))
+
+  final private case class KeyImpl[A](name: Name[A], scope: Scope) extends AnyKey { type Type = A }
 }
 
-sealed trait Init extends Product with Serializable {
+sealed trait AnyInit extends Product with Serializable {
   type Type
   private type A = Type
 
-  final def map[B](f: A => B): Init.Of[B]                            = Init.Mapped[A, B](this, f)
-  final def zipWith[B, C](x: Init.Of[B])(f: (A, B) => C): Init.Of[C] = Init.ZipWith[A, B, C](this, x, f)
-  final def flatMap[B](f: A => Init.Of[B]): Init.Of[B]               = Init.Bind[A, B](this, f)
+  final def map[B](f: A => B): Init[B]                         = Init.Mapped[A, B](this, f)
+  final def zipWith[B, C](x: Init[B])(f: (A, B) => C): Init[C] = Init.ZipWith[A, B, C](this, x, f)
+  final def flatMap[B](f: A => Init[B]): Init[B]               = Init.Bind[A, B](this, f)
 
   final override def toString = this match {
     case Init.Value(x)         => if (x.isInstanceOf[String]) s""""$x"""" else s"$x"
@@ -67,33 +77,35 @@ sealed trait Init extends Product with Serializable {
   }
 }
 object Init {
-  type Of[T] = Init { type Type = T }
+  type Init[T] = AnyInit { type Type = T }
 
-  final case class Value[A](value: A)                                             extends Init { type Type = A }
-  final case class Mapped[A, B](init: Init.Of[A], f: A => B)                      extends Init { type Type = B }
-  final case class ZipWith[A, B, C](a: Init.Of[A], b: Init.Of[B], f: (A, B) => C) extends Init { type Type = C }
-  final case class Bind[A, B](init: Init.Of[A], f: A => Init.Of[B])               extends Init { type Type = B }
+  final case class Value[A](value: A)                                       extends AnyInit { type Type = A }
+  final case class Mapped[A, B](init: Init[A], f: A => B)                   extends AnyInit { type Type = B }
+  final case class ZipWith[A, B, C](a: Init[A], b: Init[B], f: (A, B) => C) extends AnyInit { type Type = C }
+  final case class Bind[A, B](init: Init[A], f: A => Init[B])               extends AnyInit { type Type = B }
 }
 
-sealed trait Setting {
+sealed trait AnySetting {
   type Type
   private type A = Type
 
-  def key: Key.Of[A]
-  def init: Init.Of[A]
+  def key: Key[A]
+  def init: Init[A]
 
-  override def toString = key + (if (init.isInstanceOf[Init]) "  := " else " <<= ") + init
+  override def toString = key + (if (init.isInstanceOf[AnyInit]) "  := " else " <<= ") + init
 }
 
 object Setting {
-  type Of[T] = Setting { type Type = T }
-  def apply[A](key: Key.Of[A], init: Init.Of[A]): Setting.Of[A]    = SettingOf[A](key, init)
-  def unapply(s: Setting): Some[(Key.Of[s.Type], Init.Of[s.Type])] = Some((s.key, s.init))
-  final private case class SettingOf[A](key: Key.Of[A], init: Init.Of[A]) extends Setting { type Type = A }
+  type Setting[T] = AnySetting { type Type = T }
+
+  def apply[A](key: Key[A], init: Init[A]): Setting[A]          = SettingImpl[A](key, init)
+  def unapply(s: AnySetting): Some[(Key[s.Type], Init[s.Type])] = Some((s.key, s.init))
+
+  final private case class SettingImpl[A](key: Key[A], init: Init[A]) extends AnySetting { type Type = A }
 }
 
-final case class ScopeInitMap(self: ListMap[ResolvedScope, Init]) {
-  def getOrElse(scope: ResolvedScope, default: => Init): Init = {
+final case class ScopeInitMap(self: ListMap[ResolvedScope, AnyInit]) {
+  def getOrElse(scope: ResolvedScope, default: => AnyInit): AnyInit = {
     def getGlobal    = self.getOrElse(Global, default)
     def getThisBuild = self.getOrElse(ThisBuild, getGlobal)
     scope match {
@@ -110,26 +122,26 @@ object ScopeInitMap {
   val empty = ScopeInitMap(ListMap.empty)
 }
 
-final case class SettingMap private (self: ListMap[Name, ScopeInitMap]) {
-  def getValue[A](key: Key.Of[A]): A = evalInit(key, key.scope.orGlobal)
+final case class SettingMap private (self: ListMap[AnyName, ScopeInitMap]) {
+  def getValue[A](key: Key[A]): A = evalInit(key, key.scope.orGlobal)
 
-  def getInit[A](key: Key.Of[A], scope: ResolvedScope): Init.Of[A] = {
+  def getInit[A](key: Key[A], scope: ResolvedScope): Init[A] = {
     val res = self
         .getOrElse(key.name, ScopeInitMap.empty)
         .getOrElse(scope, sys.error(s"no $scope / ${key.name} in $this"))
-        .asInstanceOf[Init.Of[A]] // guaranteed by SettingMap's builder's put signature
+        .asInstanceOf[Init[A]] // guaranteed by SettingMap's builder's put signature
 //    println(s"getInit($key, $scope) = $res")
     res
   }
 
-  private def evalInit[A](init: Init.Of[A], scope: ResolvedScope): A = {
+  private def evalInit[A](init: Init[A], scope: ResolvedScope): A = {
 //    println(s"evalInit($init, $scope)")
     val res = init match {
       case Init.Value(x)         => x
       case Init.Mapped(init, f)  => f(evalInit(init, scope))
       case Init.ZipWith(a, b, f) => f(evalInit(a, scope), evalInit(b, scope))
       case Init.Bind(init, f)    => evalInit(f(evalInit(init, scope)), scope)
-      case key: Key              => evalInit(getInit(key, key.scope.or(scope)), key.scope.or(scope))
+      case key: AnyKey           => evalInit(getInit(key, key.scope.or(scope)), key.scope.or(scope))
     }
 //    println(s"evalInit($init, $scope) = $res")
     res
@@ -139,18 +151,18 @@ final case class SettingMap private (self: ListMap[Name, ScopeInitMap]) {
 }
 
 object SettingMap {
-  def fromVarargs(ss: Setting*): SettingMap = ss.foldLeft(newBuilder)(_.put(_)).result
+  def fromVarargs(ss: AnySetting*): SettingMap = ss.foldLeft(newBuilder)(_.put(_)).result
   def newBuilder: Builder0 = new Builder0(LinkedHashMap.empty)
 
   type MapBuilder[K, V, M[_, _]] = Builder[(K, V), M[K, V]]
 
-  final class Builder0(b: LinkedHashMap[Name, MapBuilder[ResolvedScope, Init, ListMap]]) {
-    def put(s: Setting): Builder0 = {
+  final class Builder0(b: LinkedHashMap[AnyName, MapBuilder[ResolvedScope, AnyInit, ListMap]]) {
+    def put(s: AnySetting): Builder0 = {
       b.getOrElseUpdate(s.key.name, ListMap.newBuilder) += s.key.scope.orGlobal -> s.init
       this
     }
     def result: SettingMap = {
-      val settingsMap = b.iterator.foldLeft(ListMap.newBuilder[Name, ScopeInitMap]) {
+      val settingsMap = b.iterator.foldLeft(ListMap.newBuilder[AnyName, ScopeInitMap]) {
         case (acc, (name, b)) => acc += name -> ScopeInitMap(b.result)
       }.result
       new SettingMap(settingsMap)
@@ -178,7 +190,7 @@ object Main {
           println(s"For $desc: Expected $expected, Actual $actual")
     }
 
-    def assertSettings[A](settingsMap: SettingMap)(ss: Setting*) = {
+    def assertSettings[A](settingsMap: SettingMap)(ss: AnySetting*) = {
       // println(settingsMap)
       ss.foreach { case Setting(key, Init.Value(value)) =>
         assertEquals(settingsMap.getValue(key), value, key.toString)
