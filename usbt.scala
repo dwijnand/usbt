@@ -141,8 +141,11 @@ object Main {
           println(s"For $desc: Expected $expected, Actual $actual")
     }
 
-    def assertKey[A](settingsMap: SettingMap)(key: Key[A], expected: A) = {
-      assertEquals(settingsMap.getValue(key), expected, key.toString)
+    def assertSettings[A](settingsMap: SettingMap)(ss: Setting[_]*) = {
+      // println(settingsMap)
+      ss.foreach { case Setting(key, Init.Value(value)) =>
+        assertEquals(settingsMap.getValue(key), value, key.toString)
+      }
     }
 
     def ignore(x: => Any) = ()
@@ -169,35 +172,30 @@ object Main {
                    baseDir in bippy      := "/bippy",
       )
 
-//      println(settingsMap)
+      assertSettings(settingsMap)(
+        srcDir in ThisBuild    := "/src",
+        srcDir in bippy        := "/bippy/src",
 
-      def check[A](key: Key[A], expected: A) = assertKey(settingsMap)(key, expected)
+        targetDir in ThisBuild := "/target",
+        targetDir in bippy     := "/bippy/target",
 
-      check(srcDir in ThisBuild,    "/src")
-      check(srcDir in bippy,        "/bippy/src")
+              scalaVersion in bippy := "2.12.8",
+        scalaBinaryVersion in bippy := "2.12",
 
-      check(targetDir in ThisBuild, "/target")
-      check(targetDir in bippy,     "/bippy/target")
-
-      check(scalaVersion in bippy, "2.12.8")
-      check(scalaBinaryVersion in bippy, "2.12")
-
-      check(   scalaSrcDir in bippy, "/bippy/src/main/scala")
-      check(       srcDirs in bippy, Seq("/bippy/src/main/scala", "/bippy/src/main/scala-2.12"))
-      check(crossTargetDir in bippy, "/bippy/target/scala-2.12")
-    }
-
-    {
-      val settingsMap = SettingMap.fromVarargs(
-        foo in Global  := "g",
-        foo in bippy   := "b",
-        bar in bippy  <<= foo,
-        baz in bippy  <<= foo in Global,
+           scalaSrcDir in bippy := "/bippy/src/main/scala",
+               srcDirs in bippy := Seq("/bippy/src/main/scala", "/bippy/src/main/scala-2.12"),
+        crossTargetDir in bippy := "/bippy/target/scala-2.12",
       )
-//      println(settingsMap)
-      def check[A](key: Key[A], expected: A) = assertKey(settingsMap)(key, expected)
-      assertKey(settingsMap)(bar in bippy, "b")
-      assertKey(settingsMap)(baz in bippy, "g")
     }
+
+    assertSettings(SettingMap.fromVarargs(
+      foo in Global  := "g",
+      foo in bippy   := "b",
+      bar in bippy  <<= foo,
+      baz in bippy  <<= foo in Global,
+    ))(
+      bar in bippy := "b",
+      baz in bippy := "g",
+    )
   }
 }
