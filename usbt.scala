@@ -134,6 +134,8 @@ object Main {
     def /(s: String) = if (self.endsWith("/")) self + s else self + "/" + s
   }
 
+  // classpathOptions (in console) https://github.com/lampepfl/dotty/pull/6577/files
+  // Compile/Test vs console scopes
   // add tasks
   // add input tasks
   def main(args: Array[String]): Unit = {
