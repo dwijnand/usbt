@@ -136,6 +136,7 @@ object Main {
 
   // classpathOptions (in console) https://github.com/lampepfl/dotty/pull/6577/files
   // Compile/Test vs console scopes
+  // alternative https://www.scala-sbt.org/1.x/docs/Scope-Delegation.html
   // add tasks
   // add input tasks
   def main(args: Array[String]): Unit = {
