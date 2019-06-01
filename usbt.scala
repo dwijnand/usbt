@@ -115,18 +115,18 @@ final case class SettingMap private (self: ListMap[AnyName, ScopeInitMap]) {
     res
   }
 
-  private def evalInitK(scope: ResolvedScope) =
-    new ~>[Init, Id] { def apply[T](x: Init[T]): T = evalInit(x, scope) }
-
   private def evalInit[A](init: Init[A], scope: ResolvedScope): A = {
 //    println(s"evalInit($init, $scope)")
-    val res = init match {
-      case Init.Value(x)                 => x
-      case Init.Mapped(init, f)          => f(evalInit(init, scope))
-      case Init.ZipWith(inits, f, alist) => f(alist.transform(inits, evalInitK(scope)))
-      case Init.Bind(init, f)            => evalInit(f(evalInit(init, scope)), scope)
-      case key: Key[A]                   => evalInit(getInit(key, key.scope.or(scope)), key.scope.or(scope))
+    val eval = new ~>[Init, Id] { eval =>
+      def apply[T](x: Init[T]): T = x match {
+        case Init.Value(x)                 => x
+        case Init.Mapped(init, f)          => f(eval(init))
+        case Init.ZipWith(inits, f, alist) => f(alist.transform(inits, eval))
+        case Init.Bind(init, f)            => eval(f(eval(init)))
+        case key: Key[T]                   => eval(getInit(key, key.scope.or(scope)))
+      }
     }
+    val res = eval(init)
 //    println(s"evalInit($init, $scope) = $res")
     res
   }
