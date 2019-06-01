@@ -3,13 +3,33 @@ package usbt
 import scala.collection.immutable.ListMap
 import scala.collection.mutable.{ Builder, LinkedHashMap }
 
-object Aliases {
+object Types {
   type AnyName    = Name[_]
   type AnyKey     = Key[_]
   type AnyInit    = Init[_]
   type AnySetting = Setting[_]
+
+  type Id[X] = X
+
+  trait ~>[-A[_], +B[_]] {
+    def apply[T](a: A[T]): B[T]
+  }
+
+  sealed trait T2K[A, B] { type l[L[x]] = (L[A], L[B]) }
 }
-import Aliases._
+import Types._
+
+trait AList[K[M[x]]] {
+  def transform[M[_], N[_]](value: K[M], f: M ~> N): K[N]
+}
+
+object AList {
+  type T2List[A, B] = AList[T2K[A, B]#l]
+  def tuple2[A, B]: T2List[A, B] = new AList[T2K[A, B]#l] {
+    type T2[M[_]] = (M[A], M[B])
+    def transform[M[_], N[_]](t: T2[M], f: M ~> N): T2[N] = (f(t._1), f(t._2))
+  }
+}
 
 final case class Name[A](value: String) { override def toString = value }
 
@@ -41,22 +61,24 @@ object Key {
 
 sealed abstract class Init[+A] extends Product with Serializable {
   final def map[B](f: A => B): Init[B]                         = Init.Mapped(this, f)
-  final def zipWith[B, C](x: Init[B])(f: (A, B) => C): Init[C] = Init.ZipWith(this, x, f)
+  final def zipWith[B, C](x: Init[B])(f: (A, B) => C): Init[C] = Init.ZipWith[T2K[A, B]#l, C]((this, x), f.tupled, AList.tuple2)
   final def flatMap[B](f: A => Init[B]): Init[B]               = Init.Bind(this, f)
 
+  final def zip[B](x: Init[B]): Init[(A, B)] = zipWith(x)((_, _))
+
   final override def toString = this match {
-    case Init.Value(x)         => if (x.isInstanceOf[String]) s""""$x"""" else s"$x"
-    case Init.Mapped(init, _)  => s"$init.map(<f>)"
-    case Init.ZipWith(a, b, _) => s"$a.zipWith($b)(<f>)"
-    case Init.Bind(init, _)    => s"$init.flatMap(<f>)"
-    case Key(name, scope)      => scope.thisFold(s"$name", scope => s"$scope / $name")
+    case Init.Value(x)             => if (x.isInstanceOf[String]) s""""$x"""" else s"$x"
+    case Init.Mapped(init, _)      => s"$init.map(<f>)"
+    case Init.ZipWith(inits, _, _) => s"Init.zipWith($inits)(<f>)"
+    case Init.Bind(init, _)        => s"$init.flatMap(<f>)"
+    case Key(name, scope)          => scope.thisFold(s"$name", scope => s"$scope / $name")
   }
 }
 object Init {
-  final case class Value[A](value: A)                                       extends Init[A]
-  final case class Mapped[A, B](init: Init[A], f: A => B)                   extends Init[B]
-  final case class ZipWith[A, B, C](a: Init[A], b: Init[B], f: (A, B) => C) extends Init[C]
-  final case class Bind[A, B](init: Init[A], f: A => Init[B])               extends Init[B]
+  final case class Value[A](value: A)                                                  extends Init[A]
+  final case class Mapped[A, B](init: Init[A], f: A => B)                              extends Init[B]
+  final case class ZipWith[K[M[x]], A](inits: K[Init], f: K[Id] => A, alist: AList[K]) extends Init[A]
+  final case class Bind[A, B](init: Init[A], f: A => Init[B])                          extends Init[B]
 }
 
 final case class Setting[A](key: Key[A], init: Init[A]) {
@@ -93,14 +115,17 @@ final case class SettingMap private (self: ListMap[AnyName, ScopeInitMap]) {
     res
   }
 
+  private def evalInitK(scope: ResolvedScope) =
+    new ~>[Init, Id] { def apply[T](x: Init[T]): T = evalInit(x, scope) }
+
   private def evalInit[A](init: Init[A], scope: ResolvedScope): A = {
 //    println(s"evalInit($init, $scope)")
     val res = init match {
-      case Init.Value(x)         => x
-      case Init.Mapped(init, f)  => f(evalInit(init, scope))
-      case Init.ZipWith(a, b, f) => f(evalInit(a, scope), evalInit(b, scope))
-      case Init.Bind(init, f)    => evalInit(f(evalInit(init, scope)), scope)
-      case key: Key[A]           => evalInit(getInit(key, key.scope.or(scope)), key.scope.or(scope))
+      case Init.Value(x)                 => x
+      case Init.Mapped(init, f)          => f(evalInit(init, scope))
+      case Init.ZipWith(inits, f, alist) => f(alist.transform(inits, evalInitK(scope)))
+      case Init.Bind(init, f)            => evalInit(f(evalInit(init, scope)), scope)
+      case key: Key[A]                   => evalInit(getInit(key, key.scope.or(scope)), key.scope.or(scope))
     }
 //    println(s"evalInit($init, $scope) = $res")
     res
@@ -154,9 +179,9 @@ object Main {
 
     def assertSettings[A](settingsMap: SettingMap)(ss: AnySetting*) = {
       // println(settingsMap)
-      ss.foreach { case Setting(key, Init.Value(value)) =>
+      ss.foreach(x => (x: @unchecked) match { case Setting(key, Init.Value(value)) =>
         assertEquals(settingsMap.getValue(key), value, key.toString)
-      }
+      })
     }
 
     def ignore(x: => Any) = ()
