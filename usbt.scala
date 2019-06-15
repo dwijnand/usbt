@@ -5,7 +5,6 @@ import scala.collection.mutable.{ Builder, LinkedHashMap }
 
 object Types {
   type AnyName    = Name[_]
-  type AnyKey     = Key[_]
   type AnyInit    = Init[_]
   type AnySetting = Setting[_]
 
@@ -85,29 +84,33 @@ final case class Setting[A](key: Key[A], init: Init[A]) {
   override def toString = key + (if (init.isInstanceOf[AnyInit]) "  := " else " <<= ") + init
 }
 
-final case class ScopeInitMap(self: ListMap[ResolvedScope, AnyInit]) {
+/** `Name -> Scope -> Init`, for example:
+ *  baseDir -> Global -> Value(/)
+ *  baseDir ->  foo   -> Value(/foo)
+ */
+final case class ScopeInitMap(underlying: ListMap[ResolvedScope, AnyInit]) {
   def getOrElse(scope: ResolvedScope, default: => AnyInit): AnyInit = {
-    def getGlobal    = self.getOrElse(Global, default)
-    def getThisBuild = self.getOrElse(ThisBuild, getGlobal)
+    def getGlobal    = underlying.getOrElse(Global, default)
+    def getThisBuild = underlying.getOrElse(ThisBuild, getGlobal)
     scope match {
       case Global           => getGlobal
       case ThisBuild        => getThisBuild
-      case LocalProject(id) => self.getOrElse(scope, getThisBuild)
+      case LocalProject(id) => underlying.getOrElse(scope, getThisBuild)
     }
   }
 
-  override def toString = if (self.size <= 1) self.mkString else self.mkString("[ ", ", ", " ]")
+  override def toString = if (underlying.size <= 1) underlying.mkString else underlying.mkString("[ ", ", ", " ]")
 }
 
 object ScopeInitMap {
   val empty = ScopeInitMap(ListMap.empty)
 }
 
-final case class SettingMap private (self: ListMap[AnyName, ScopeInitMap]) {
+final case class SettingMap private (underlying: ListMap[AnyName, ScopeInitMap]) {
   def getValue[A](key: Key[A]): A = evalInit(key, key.scope.orGlobal)
 
   def getInit[A](key: Key[A], scope: ResolvedScope): Init[A] = {
-    val res = self
+    val res = underlying
         .getOrElse(key.name, ScopeInitMap.empty)
         .getOrElse(scope, sys.error(s"no $scope / ${key.name} in $this"))
         .asInstanceOf[Init[A]] // guaranteed by SettingMap's builder's put signature
@@ -131,7 +134,7 @@ final case class SettingMap private (self: ListMap[AnyName, ScopeInitMap]) {
     res
   }
 
-  override def toString = self.mkString("SettingMap [\n  ", "\n  ", "\n]")
+  override def toString = underlying.mkString("SettingMap [\n  ", "\n  ", "\n]")
 }
 
 object SettingMap {
@@ -178,7 +181,7 @@ object Main {
     }
 
     def assertSettings[A](settingsMap: SettingMap)(ss: AnySetting*) = {
-      // println(settingsMap)
+      println(settingsMap)
       ss.foreach(x => (x: @unchecked) match { case Setting(key, Init.Value(value)) =>
         assertEquals(settingsMap.getValue(key), value, key.toString)
       })
