@@ -10,14 +10,28 @@ object Types {
 
   type Id[X] = X
 
+  /** `A ~> B` describes the natural transformation of the higher-kinds `A[_]` and `B[_]`.
+   *  An implementation of this describe how to transform an `A[T]` to a `B[T]`, given any type `T`.
+   */
   trait ~>[-A[_], +B[_]] {
     def apply[T](a: A[T]): B[T]
   }
 
-  sealed trait T2K[A, B] { type l[L[x]] = (L[A], L[B]) }
+  /** `T2K` is a formulation for a "higher-kinded" Tuple2 type.
+   *  Given the types `A` and `B`, `T2K[A, B]` defines `l`, the type lambda `L[_] =>> (L[A], L[B])`,
+   *  that is: given a type-constructor `L[_]` it returns the tuple type `(L[A], L[B])`.
+   */
+  sealed trait T2K[A, B] {
+    type l[L[x]] = (L[A], L[B])
+  }
 }
 import Types._
 
+/** `AList` (literally "a list") is a typeclass for a (originally, list-like) type `K[_]` of
+ *  elements, which are all values of some higher-kinded type `M[_]`.  Such typeclass describes how
+ *  to transform a value of type `K[M[x]]]` into `K[N[x]]` given the natural transformation
+ *  `M ~> N`.
+ */
 trait AList[K[M[x]]] {
   def transform[M[_], N[_]](value: K[M], f: M ~> N): K[N]
 }
