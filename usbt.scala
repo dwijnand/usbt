@@ -117,7 +117,7 @@ final case class SettingMap private (underlying: ListMap[AnyName, ScopeInitMap])
         case key: Key[T]                   => eval(getInit(key, key.scope.or(scope)))
       }
     }
-    eval(init)
+    eval[A](init)
   }
 
   override def toString = underlying.mkString("SettingMap [\n  ", "\n  ", "\n]")
