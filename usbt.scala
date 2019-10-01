@@ -65,23 +65,23 @@ final case class Setting[A](key: Key[A], init: Init[A]) {
  *  baseDir ->  foo   -> Value(/foo)
  */
 final case class SettingMap private (underlying: ListMap[AnyName, ScopeInitMap]) {
-  def getValue[A](key: Key[A]): A = evalInit(key, key.scope.or(Global))
+  def getValue[A](key: Key[A]): Option[A] = evalInit(key, key.scope.or(Global))
 
-  def getInit[A](key: Key[A], scope: ResolvedScope): Init[A] = {
+  def getInit[A](key: Key[A], scope: ResolvedScope): Option[Init[A]] = {
     underlying
         .getOrElse(key.name, ScopeInitMap(ListMap.empty))
-        .getOrElse(scope, sys.error(s"no $scope / ${key.name} in $this"))
-        .asInstanceOf[Init[A]] // guaranteed by SettingMap's builder's put signature
+        .get(scope)
+        .asInstanceOf[Option[Init[A]]] // guaranteed by SettingMap's builder's put signature
   }
 
-  private def evalInit[A](init: Init[A], scope: ResolvedScope): A = {
-    val eval = new ~>[Init, Id] { eval =>
-      def apply[T](x: Init[T]): T = x match {
-        case Init.Value(x)                 => x
-        case Init.Mapped(init, f)          => f(eval(init))
-        case Init.ZipWith(inits, f, alist) => f(alist.transform(inits, eval))
-        case Init.Bind(init, f)            => eval(f(eval(init)))
-        case key: Key[T]                   => eval(getInit(key, key.scope.or(scope)))
+  private def evalInit[A](init: Init[A], scope: ResolvedScope): Option[A] = {
+    val eval = new ~>[Init, Option] { eval =>
+      def apply[T](x: Init[T]): Option[T] = x match {
+        case Init.Value(x)                 => Some(x)
+        case Init.Mapped(init, f)          => eval(init).map(f)
+        case Init.ZipWith(inits, f, alist) => alist.traverse[Init, Option, Id](inits, eval).map(f)
+        case Init.Bind(init, f)            => eval(init).map(f).flatMap(eval(_))
+        case key: Key[T]                   => getInit(key, key.scope.or(scope)).flatMap(eval(_))
       }
     }
     eval[A](init)
@@ -91,17 +91,18 @@ final case class SettingMap private (underlying: ListMap[AnyName, ScopeInitMap])
 }
 
 final case class ScopeInitMap(underlying: ListMap[ResolvedScope, AnyInit]) {
-  def getOrElse(scope: ResolvedScope, default: => AnyInit): AnyInit = {
-    def getGlobal    = underlying.getOrElse(Global, default)
-    def getThisBuild = underlying.getOrElse(ThisBuild, getGlobal)
+  def get(scope: ResolvedScope): Option[AnyInit] = {
+    def getGlobal    = underlying.get(Global)
+    def getThisBuild = underlying.get(ThisBuild).orElse(getGlobal)
     scope match {
-      case Global           => getGlobal
-      case ThisBuild        => getThisBuild
-      case LocalProject(id) => underlying.getOrElse(scope, getThisBuild)
+      case Global          => getGlobal
+      case ThisBuild       => getThisBuild
+      case LocalProject(_) => underlying.get(scope).orElse(getThisBuild)
     }
   }
 
-  override def toString = if (underlying.size <= 1) underlying.mkString else underlying.mkString("[ ", ", ", " ]")
+  override def toString =
+    if (underlying.size <= 1) underlying.mkString else underlying.mkString("[ ", ", ", " ]")
 }
 
 object SettingMap {
@@ -132,14 +133,28 @@ object `package` {
   type AnySetting = Setting[_]
 }
 
+trait Applicative[F[_]] {
+  def map[S, T](f: S => T, v: F[S]): F[T]
+  def pure[S](s: => S): F[S]
+  def apply[S, T](f: F[S => T], v: F[S]): F[T]
+}
+
+object Applicative {
+  implicit val appOption: Applicative[Option] = new Applicative[Option] {
+    def map[S, T](f: S => T, v: Option[S])           = v.map(f)
+    def pure[S](s: => S)                             = Some(s)
+    def apply[S, T](f: Option[S => T], v: Option[S]) = f.flatMap(v.map)
+  }
+}
+
 /** Natural transformation. */
 trait ~>[-A[_], +B[_]] {
   def apply[T](a: A[T]): B[T]
 }
 
-/** A "higher-kinded" lists, that is containing elements of the same higher-kinded type `M[_]`. */
+/** A "higher-kinded" list containing elements of the same higher-kinded type `M[_]`. */
 trait AList[K[M[x]]] {
-  def transform[M[_], N[_]](value: K[M], f: M ~> N): K[N]
+  def traverse[M[_], N[_]: Applicative, P[_]](value: K[M], f: M ~> (N Comp P)#l): N[K[P]]
 }
 
 object AList {
@@ -147,12 +162,19 @@ object AList {
 
   def tuple2[A, B]: T2List[A, B] = new AList[T2K[A, B]#l] {
     type T2[M[_]] = (M[A], M[B])
-    def transform[M[_], N[_]](t: T2[M], f: M ~> N): T2[N] = (f(t._1), f(t._2))
+
+    def traverse[M[_], N[_], P[_]](t: T2[M], f: M ~> (N Comp P)#l)(implicit np: Applicative[N]): N[T2[P]] = {
+      val g = (Tuple2.apply[P[A], P[B]] _).curried
+      np.apply(np.map(g, f(t._1)), f(t._2))
+    }
   }
+}
+
+sealed abstract class Comp[A[_], B[_]] {
+  type l[T] = A[B[T]]
 }
 
 /** A utility to define the type lambda for "higher-kinded" Tuple2: `L[_] =>> (L[A], L[B])`. */
 sealed abstract class T2K[A, B] {
   type l[L[x]] = (L[A], L[B])
 }
-
