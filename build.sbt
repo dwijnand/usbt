@@ -6,5 +6,5 @@ scalaVersion in ThisBuild := "2.12.10"
 
 scalacOptions ++= Seq(
   "-feature",
-  "-language:higherKinds",
+  "-language:higherKinds,implicitConversions",
 )

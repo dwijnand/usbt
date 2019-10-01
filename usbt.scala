@@ -5,18 +5,8 @@ import scala.collection.mutable.{ Builder, LinkedHashMap }
 
 final case class Name[A](value: String) { override def toString = value }
 
-sealed abstract class Scope {
-  /** Returns this scope, if it's already resolved, or the given resolved fallback. */
-  def or(fallback: ResolvedScope): ResolvedScope = this match {
-    case This            => fallback
-    case Global          => Global
-    case ThisBuild       => ThisBuild
-    case x: LocalProject => x
-  }
-}
-
-/** "Resolved" means it's fully-qualified and doesn't rely on any remaining context. */
-sealed trait ResolvedScope extends Scope
+sealed trait Scope
+sealed trait ResolvedScope extends Scope // "Resolved" means doesn't rely on context (fully-qualified)
 case object This      extends Scope
 case object Global    extends ResolvedScope
 case object ThisBuild extends ResolvedScope // not really resolved
@@ -56,6 +46,16 @@ object Init {
 
 final case class Setting[A](key: Key[A], init: Init[A]) {
   override def toString = key + (if (init.isInstanceOf[Init.Value[_]]) "  := " else " <<= ") + init
+}
+
+final class ScopeOps(scope: Scope) {
+  /** Returns this scope, if it's already resolved, or the given resolved fallback. */
+  def or(fallback: ResolvedScope): ResolvedScope = scope match {
+    case This            => fallback
+    case Global          => Global
+    case ThisBuild       => ThisBuild
+    case x: LocalProject => x
+  }
 }
 
 /** A map of Name -> Scope -> Init.
@@ -131,6 +131,8 @@ object `package` {
   type AnyName    = Name[_]
   type AnyInit    = Init[_]
   type AnySetting = Setting[_]
+
+  implicit def scopeOps(scope: Scope): ScopeOps = new ScopeOps(scope)
 }
 
 trait Applicative[F[_]] {
