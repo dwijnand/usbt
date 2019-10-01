@@ -6,11 +6,6 @@ import Types._
 
 final case class Name[A](value: String) { override def toString = value }
 
-/** Natural transformation. */
-trait ~>[-A[_], +B[_]] {
-  def apply[T](a: A[T]): B[T]
-}
-
 sealed abstract class Scope extends Product with Serializable {
   def thisFold[A](ifThis: A, ifNot: Scope => A): A = if (this == This) ifThis else ifNot(this)
   def or(scope: ResolvedScope): ResolvedScope = this match {
@@ -70,6 +65,11 @@ object Types {
   type AnyName    = Name[_]
   type AnyInit    = Init[_]
   type AnySetting = Setting[_]
+}
+
+/** Natural transformation. */
+trait ~>[-A[_], +B[_]] {
+  def apply[T](a: A[T]): B[T]
 }
 
 /** A "higher-kinded" lists, that is containing elements of the same higher-kinded type `M[_]`. */
