@@ -97,30 +97,12 @@ sealed abstract class T2K[A, B] {
  *  baseDir -> Global -> Value(/)
  *  baseDir ->  foo   -> Value(/foo)
  */
-final case class ScopeInitMap(underlying: ListMap[ResolvedScope, AnyInit]) {
-  def getOrElse(scope: ResolvedScope, default: => AnyInit): AnyInit = {
-    def getGlobal    = underlying.getOrElse(Global, default)
-    def getThisBuild = underlying.getOrElse(ThisBuild, getGlobal)
-    scope match {
-      case Global           => getGlobal
-      case ThisBuild        => getThisBuild
-      case LocalProject(id) => underlying.getOrElse(scope, getThisBuild)
-    }
-  }
-
-  override def toString = if (underlying.size <= 1) underlying.mkString else underlying.mkString("[ ", ", ", " ]")
-}
-
-object ScopeInitMap {
-  val empty = ScopeInitMap(ListMap.empty)
-}
-
 final case class SettingMap private (underlying: ListMap[AnyName, ScopeInitMap]) {
   def getValue[A](key: Key[A]): A = evalInit(key, key.scope.orGlobal)
 
   def getInit[A](key: Key[A], scope: ResolvedScope): Init[A] = {
     val res = underlying
-        .getOrElse(key.name, ScopeInitMap.empty)
+        .getOrElse(key.name, ScopeInitMap(ListMap.empty))
         .getOrElse(scope, sys.error(s"no $scope / ${key.name} in $this"))
         .asInstanceOf[Init[A]] // guaranteed by SettingMap's builder's put signature
 //    println(s"getInit($key, $scope) = $res")
@@ -144,6 +126,20 @@ final case class SettingMap private (underlying: ListMap[AnyName, ScopeInitMap])
   }
 
   override def toString = underlying.mkString("SettingMap [\n  ", "\n  ", "\n]")
+}
+
+final case class ScopeInitMap(underlying: ListMap[ResolvedScope, AnyInit]) {
+  def getOrElse(scope: ResolvedScope, default: => AnyInit): AnyInit = {
+    def getGlobal    = underlying.getOrElse(Global, default)
+    def getThisBuild = underlying.getOrElse(ThisBuild, getGlobal)
+    scope match {
+      case Global           => getGlobal
+      case ThisBuild        => getThisBuild
+      case LocalProject(id) => underlying.getOrElse(scope, getThisBuild)
+    }
+  }
+
+  override def toString = if (underlying.size <= 1) underlying.mkString else underlying.mkString("[ ", ", ", " ]")
 }
 
 object SettingMap {
