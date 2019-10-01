@@ -101,16 +101,13 @@ final case class SettingMap private (underlying: ListMap[AnyName, ScopeInitMap])
   def getValue[A](key: Key[A]): A = evalInit(key, key.scope.orGlobal)
 
   def getInit[A](key: Key[A], scope: ResolvedScope): Init[A] = {
-    val res = underlying
+    underlying
         .getOrElse(key.name, ScopeInitMap(ListMap.empty))
         .getOrElse(scope, sys.error(s"no $scope / ${key.name} in $this"))
         .asInstanceOf[Init[A]] // guaranteed by SettingMap's builder's put signature
-//    println(s"getInit($key, $scope) = $res")
-    res
   }
 
   private def evalInit[A](init: Init[A], scope: ResolvedScope): A = {
-//    println(s"evalInit($init, $scope)")
     val eval = new ~>[Init, Id] { eval =>
       def apply[T](x: Init[T]): T = x match {
         case Init.Value(x)                 => x
@@ -120,9 +117,7 @@ final case class SettingMap private (underlying: ListMap[AnyName, ScopeInitMap])
         case key: Key[T]                   => eval(getInit(key, key.scope.or(scope)))
       }
     }
-    val res = eval(init)
-//    println(s"evalInit($init, $scope) = $res")
-    res
+    eval(init)
   }
 
   override def toString = underlying.mkString("SettingMap [\n  ", "\n  ", "\n]")
