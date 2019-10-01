@@ -55,7 +55,7 @@ object Init {
 }
 
 final case class Setting[A](key: Key[A], init: Init[A]) {
-  override def toString = key + (if (init.isInstanceOf[AnyInit]) "  := " else " <<= ") + init
+  override def toString = key + (if (init.isInstanceOf[Init.Value[_]]) "  := " else " <<= ") + init
 }
 
 /** A map of Name -> Scope -> Init.
