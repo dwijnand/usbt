@@ -2,7 +2,6 @@ package usbt
 
 import scala.collection.immutable.ListMap
 import scala.collection.mutable.{ Builder, LinkedHashMap }
-import Types._
 
 final case class Name[A](value: String) { override def toString = value }
 
@@ -59,7 +58,7 @@ final case class Setting[A](key: Key[A], init: Init[A]) {
   override def toString = key + (if (init.isInstanceOf[AnyInit]) "  := " else " <<= ") + init
 }
 
-object Types {
+object `package` {
   type Id[X] = X
 
   type AnyName    = Name[_]
