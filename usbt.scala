@@ -21,24 +21,22 @@ object Key {
 
 sealed abstract class Init[+A] {
   final def map[B](f: A => B): Init[B]                         = Init.Mapped(this, f)
-  final def zipWith[B, C](x: Init[B])(f: (A, B) => C): Init[C] = Init.ZipWith[T2K[A, B]#l, C]((this, x), f.tupled, AList.tuple2)
+  final def zipWith[B, C](y: Init[B])(f: (A, B) => C): Init[C] = Init.ZipWith(this, y, f)
   final def flatMap[B](f: A => Init[B]): Init[B]               = Init.Bind(this, f)
 
-  final def zip[B](x: Init[B]): Init[(A, B)] = zipWith(x)((_, _))
-
   final override def toString = this match {
-    case Init.Value(x)             => if (x.isInstanceOf[String]) s""""$x"""" else s"$x"
-    case Init.Mapped(init, _)      => s"$init.map(<f>)"
-    case Init.ZipWith(inits, _, _) => s"Init.zipWith($inits)(<f>)"
-    case Init.Bind(init, _)        => s"$init.flatMap(<f>)"
-    case Key(name, scope)          => if (scope == This) s"$name" else s"$scope / $name"
+    case Init.Value(x)         => if (x.isInstanceOf[String]) s""""$x"""" else s"$x"
+    case Init.Mapped(init, _)  => s"$init.map(<f>)"
+    case Init.ZipWith(x, y, _) => s"$x.zipWith($y)(<f>)"
+    case Init.Bind(init, _)    => s"$init.flatMap(<f>)"
+    case Key(name, scope)      => if (scope == This) s"$name" else s"$scope / $name"
   }
 }
 object Init {
-  final case class Value[A](value: A)                                                  extends Init[A]
-  final case class Mapped[A, B](init: Init[A], f: A => B)                              extends Init[B]
-  final case class ZipWith[K[M[x]], A](inits: K[Init], f: K[Id] => A, alist: AList[K]) extends Init[A]
-  final case class Bind[A, B](init: Init[A], f: A => Init[B])                          extends Init[B]
+  final case class Value[A](value: A)                                       extends Init[A]
+  final case class Mapped[A, B](init: Init[A], f: A => B)                   extends Init[B]
+  final case class ZipWith[A, B, C](x: Init[A], y: Init[B], f: (A, B) => C) extends Init[C]
+  final case class Bind[A, B](init: Init[A], f: A => Init[B])               extends Init[B]
 }
 
 final case class Setting[A](key: Key[A], init: Init[A]) {
@@ -74,11 +72,11 @@ final case class SettingMap private (underlying: Map[AnyName, ScopeInitMap]) {
   private def evalInit[A](init: Init[A], fallbackScope: ResolvedScope): Option[A] = {
     val eval = new ~>[Init, Option] { eval =>
       def apply[T](x: Init[T]): Option[T] = x match {
-        case Init.Value(x)                 => Some(x)
-        case Init.Mapped(init, f)          => eval(init).map(f)
-        case Init.ZipWith(inits, f, alist) => alist.traverse[Init, Option, Id](inits, eval).map(f)
-        case Init.Bind(init, f)            => eval(init).map(f).flatMap(eval(_))
-        case key: Key[T]                   =>
+        case Init.Value(x)         => Some(x)
+        case Init.Mapped(init, f)  => eval(init).map(f)
+        case Init.ZipWith(x, y, f) => eval(x).flatMap(xx => eval(y).map(f(xx, _)))
+        case Init.Bind(init, f)    => eval(init).map(f).flatMap(eval(_))
+        case key: Key[T]           =>
           val scope = key.scope.or(fallbackScope) // resolve the scope, using the previous scope as the fallback
           getInit(key, scope).flatMap(eval(_))
       }
@@ -133,48 +131,7 @@ object `package` {
   implicit def scopeOps(scope: Scope): ScopeOps = new ScopeOps(scope)
 }
 
-trait Applicative[F[_]] {
-  def map[S, T](f: S => T, v: F[S]): F[T]
-  def pure[S](s: => S): F[S]
-  def apply[S, T](f: F[S => T], v: F[S]): F[T]
-}
-
-object Applicative {
-  implicit val appOption: Applicative[Option] = new Applicative[Option] {
-    def map[S, T](f: S => T, v: Option[S])           = v.map(f)
-    def pure[S](s: => S)                             = Some(s)
-    def apply[S, T](f: Option[S => T], v: Option[S]) = f.flatMap(v.map)
-  }
-}
-
 /** Natural transformation. */
 trait ~>[-A[_], +B[_]] {
   def apply[T](a: A[T]): B[T]
-}
-
-/** A "higher-kinded" list containing elements of the same higher-kinded type `M[_]`. */
-trait AList[K[M[x]]] {
-  def traverse[M[_], N[_]: Applicative, P[_]](value: K[M], f: M ~> (N Comp P)#l): N[K[P]]
-}
-
-object AList {
-  type T2List[A, B] = AList[T2K[A, B]#l]
-
-  def tuple2[A, B]: T2List[A, B] = new AList[T2K[A, B]#l] {
-    type T2[M[_]] = (M[A], M[B])
-
-    def traverse[M[_], N[_], P[_]](t: T2[M], f: M ~> (N Comp P)#l)(implicit np: Applicative[N]): N[T2[P]] = {
-      val g = (Tuple2.apply[P[A], P[B]] _).curried
-      np.apply(np.map(g, f(t._1)), f(t._2))
-    }
-  }
-}
-
-sealed abstract class Comp[A[_], B[_]] {
-  type l[T] = A[B[T]]
-}
-
-/** A utility to define the type lambda for "higher-kinded" Tuple2: `L[_] =>> (L[A], L[B])`. */
-sealed abstract class T2K[A, B] {
-  type l[L[x]] = (L[A], L[B])
 }
