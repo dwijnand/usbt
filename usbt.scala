@@ -2,49 +2,14 @@ package usbt
 
 import scala.collection.immutable.ListMap
 import scala.collection.mutable.{ Builder, LinkedHashMap }
-
-object Types {
-  type AnyName    = Name[_]
-  type AnyInit    = Init[_]
-  type AnySetting = Setting[_]
-
-  type Id[X] = X
-
-  /** `A ~> B` describes the natural transformation of the higher-kinds `A[_]` and `B[_]`.
-   *  An implementation of this describe how to transform an `A[T]` to a `B[T]`, given any type `T`.
-   */
-  trait ~>[-A[_], +B[_]] {
-    def apply[T](a: A[T]): B[T]
-  }
-
-  /** `T2K` is a formulation for a "higher-kinded" Tuple2 type.
-   *  Given the types `A` and `B`, `T2K[A, B]` defines `l`, the type lambda `L[_] =>> (L[A], L[B])`,
-   *  that is: given a type-constructor `L[_]` it returns the tuple type `(L[A], L[B])`.
-   */
-  sealed trait T2K[A, B] {
-    type l[L[x]] = (L[A], L[B])
-  }
-}
 import Types._
 
-/** `AList` (literally "a list") is a typeclass for a (originally, list-like) type `K[_]` of
- *  elements, which are all values of some higher-kinded type `M[_]`.  Such typeclass describes how
- *  to transform a value of type `K[M[x]]]` into `K[N[x]]` given the natural transformation
- *  `M ~> N`.
- */
-trait AList[K[M[x]]] {
-  def transform[M[_], N[_]](value: K[M], f: M ~> N): K[N]
-}
-
-object AList {
-  type T2List[A, B] = AList[T2K[A, B]#l]
-  def tuple2[A, B]: T2List[A, B] = new AList[T2K[A, B]#l] {
-    type T2[M[_]] = (M[A], M[B])
-    def transform[M[_], N[_]](t: T2[M], f: M ~> N): T2[N] = (f(t._1), f(t._2))
-  }
-}
-
 final case class Name[A](value: String) { override def toString = value }
+
+/** Natural transformation. */
+trait ~>[-A[_], +B[_]] {
+  def apply[T](a: A[T]): B[T]
+}
 
 sealed abstract class Scope extends Product with Serializable {
   def thisFold[A](ifThis: A, ifNot: Scope => A): A = if (this == This) ifThis else ifNot(this)
@@ -56,20 +21,21 @@ sealed abstract class Scope extends Product with Serializable {
   }
   def orGlobal = or(Global)
 }
-case object This extends Scope
+
 sealed trait ResolvedScope extends Scope
-case object Global extends ResolvedScope
+case object This      extends Scope
+case object Global    extends ResolvedScope
 case object ThisBuild extends ResolvedScope
 final case class LocalProject(id: String) extends ResolvedScope { override def toString = id }
+
+object Key {
+  def apply[A](name: String): Key[A] = Key(Name(name), This)
+}
 
 final case class Key[A](name: Name[A], scope: Scope) extends Init[A] {
   def in(scope: Scope): Key[A]       = Key(name, scope)
   def <<=(init: Init[A]): Setting[A] = Setting(this, init)
   def :=(value: A): Setting[A]       = this <<= Init.Value(value)
-}
-
-object Key {
-  def apply[A](name: String): Key[A] = Key(Name(name), This)
 }
 
 sealed abstract class Init[+A] extends Product with Serializable {
@@ -98,7 +64,36 @@ final case class Setting[A](key: Key[A], init: Init[A]) {
   override def toString = key + (if (init.isInstanceOf[AnyInit]) "  := " else " <<= ") + init
 }
 
-/** `Name -> Scope -> Init`, for example:
+object Types {
+  type Id[X] = X
+
+  type AnyName    = Name[_]
+  type AnyInit    = Init[_]
+  type AnySetting = Setting[_]
+}
+
+/** A "higher-kinded" lists, that is containing elements of the same higher-kinded type `M[_]`. */
+trait AList[K[M[x]]] {
+  def transform[M[_], N[_]](value: K[M], f: M ~> N): K[N]
+}
+
+object AList {
+  type T2List[A, B] = AList[T2K[A, B]#l]
+
+  def tuple2[A, B]: T2List[A, B] = new AList[T2K[A, B]#l] {
+    type T2[M[_]] = (M[A], M[B])
+    def transform[M[_], N[_]](t: T2[M], f: M ~> N): T2[N] = (f(t._1), f(t._2))
+  }
+}
+
+/** A utility to define the type lambda for "higher-kinded" Tuple2: `L[_] =>> (L[A], L[B])`. */
+sealed abstract class T2K[A, B] {
+  type l[L[x]] = (L[A], L[B])
+}
+
+/** A map of Name -> Scope -> Init.
+ *
+ *  An example:
  *  baseDir -> Global -> Value(/)
  *  baseDir ->  foo   -> Value(/foo)
  */
