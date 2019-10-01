@@ -5,8 +5,8 @@ import scala.collection.mutable.{ Builder, LinkedHashMap }
 
 final case class Name[A](value: String) { override def toString = value }
 
-sealed abstract class Scope extends Product with Serializable {
-  /** Returns this scope, if it's already "resolved", or the given resolved fallback. */
+sealed abstract class Scope {
+  /** Returns this scope, if it's already resolved, or the given resolved fallback. */
   def or(fallback: ResolvedScope): ResolvedScope = this match {
     case This            => fallback
     case Global          => Global
@@ -19,7 +19,7 @@ sealed abstract class Scope extends Product with Serializable {
 sealed trait ResolvedScope extends Scope
 case object This      extends Scope
 case object Global    extends ResolvedScope
-case object ThisBuild extends ResolvedScope // "resolved", w/e
+case object ThisBuild extends ResolvedScope // not really resolved
 final case class LocalProject(id: String) extends ResolvedScope { override def toString = id }
 
 final case class Key[A](name: Name[A], scope: Scope) extends Init[A] {
@@ -32,7 +32,7 @@ object Key {
   def apply[A](name: String): Key[A] = Key(Name(name), This)
 }
 
-sealed abstract class Init[+A] extends Product with Serializable {
+sealed abstract class Init[+A] {
   final def map[B](f: A => B): Init[B]                         = Init.Mapped(this, f)
   final def zipWith[B, C](x: Init[B])(f: (A, B) => C): Init[C] = Init.ZipWith[T2K[A, B]#l, C]((this, x), f.tupled, AList.tuple2)
   final def flatMap[B](f: A => Init[B]): Init[B]               = Init.Bind(this, f)
