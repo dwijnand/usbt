@@ -1,8 +1,5 @@
 package usbt
 
-import scala.collection.immutable.ListMap
-import scala.collection.mutable.{ Builder, LinkedHashMap }
-
 final case class Name[A](value: String) { override def toString = value }
 
 sealed trait Scope
@@ -64,24 +61,26 @@ final class ScopeOps(scope: Scope) {
  *  baseDir -> Global -> Value(/)
  *  baseDir ->  foo   -> Value(/foo)
  */
-final case class SettingMap private (underlying: ListMap[AnyName, ScopeInitMap]) {
-  def getValue[A](key: Key[A]): Option[A] = evalInit(key, key.scope.or(Global))
+final case class SettingMap private (underlying: Map[AnyName, ScopeInitMap]) {
+  def getInit[A](key: Key[A], scope: ResolvedScope): Option[Init[A]] =
+    underlying.get(key.name).flatMap(_.get(scope)).asInstanceOf[Option[Init[A]]]
 
-  def getInit[A](key: Key[A], scope: ResolvedScope): Option[Init[A]] = {
-    underlying
-        .getOrElse(key.name, ScopeInitMap(ListMap.empty))
-        .get(scope)
-        .asInstanceOf[Option[Init[A]]] // guaranteed by SettingMap's builder's put signature
+  def getValue[A](key: Key[A]): Option[A] = {
+    val init: Init[A] = key // the target `Init` to resolve the `key` itself
+    val scope: ResolvedScope = key.scope.or(Global) // resolve the scope, using Global as the fallback
+    evalInit(init, scope)
   }
 
-  private def evalInit[A](init: Init[A], scope: ResolvedScope): Option[A] = {
+  private def evalInit[A](init: Init[A], fallbackScope: ResolvedScope): Option[A] = {
     val eval = new ~>[Init, Option] { eval =>
       def apply[T](x: Init[T]): Option[T] = x match {
         case Init.Value(x)                 => Some(x)
         case Init.Mapped(init, f)          => eval(init).map(f)
         case Init.ZipWith(inits, f, alist) => alist.traverse[Init, Option, Id](inits, eval).map(f)
         case Init.Bind(init, f)            => eval(init).map(f).flatMap(eval(_))
-        case key: Key[T]                   => getInit(key, key.scope.or(scope)).flatMap(eval(_))
+        case key: Key[T]                   =>
+          val scope = key.scope.or(fallbackScope) // resolve the scope, using the previous scope as the fallback
+          getInit(key, scope).flatMap(eval(_))
       }
     }
     eval[A](init)
@@ -90,7 +89,7 @@ final case class SettingMap private (underlying: ListMap[AnyName, ScopeInitMap])
   override def toString = underlying.mkString("SettingMap [\n  ", "\n  ", "\n]")
 }
 
-final case class ScopeInitMap(underlying: ListMap[ResolvedScope, AnyInit]) {
+final case class ScopeInitMap private (underlying: Map[ResolvedScope, AnyInit]) {
   def get(scope: ResolvedScope): Option[AnyInit] = {
     def getGlobal    = underlying.get(Global)
     def getThisBuild = underlying.get(ThisBuild).orElse(getGlobal)
@@ -106,22 +105,21 @@ final case class ScopeInitMap(underlying: ListMap[ResolvedScope, AnyInit]) {
 }
 
 object SettingMap {
-  def fromVarargs(ss: AnySetting*): SettingMap = ss.foldLeft(newBuilder)(_.put(_)).result
-  def newBuilder: Builder0 = new Builder0(LinkedHashMap.empty)
-
-  type MapBuilder[K, V, M[_, _]] = Builder[(K, V), M[K, V]]
-
-  final class Builder0(b: LinkedHashMap[AnyName, MapBuilder[ResolvedScope, AnyInit, ListMap]]) {
-    def put[A](s: Setting[A]): Builder0 = {
-      b.getOrElseUpdate(s.key.name, ListMap.newBuilder) += s.key.scope.or(Global) -> s.init
-      this
+  def fromVarargs(settings: AnySetting*): SettingMap = {
+    import scala.collection.immutable.ListMap
+    import scala.collection.mutable.{ Builder, LinkedHashMap }
+    type ScopeMapBuilder = Builder[(ResolvedScope, AnyInit), Map[ResolvedScope, AnyInit]]
+    val b = settings.foldLeft(new LinkedHashMap[AnyName, ScopeMapBuilder]) { (acc, setting) =>
+      val Setting(Key(name, scope0), init) = setting
+      val scopeMap = acc.getOrElseUpdate(name, ListMap.newBuilder)
+      val scope = scope0.or(Global) // resolve the scope, using Global as the fallback
+      scopeMap += scope -> init // override previous mapping at given `scope` (and `name`)
+      acc
     }
-    def result: SettingMap = {
-      val settingsMap = b.iterator.foldLeft(ListMap.newBuilder[AnyName, ScopeInitMap]) {
-        case (acc, (name, b)) => acc += name -> ScopeInitMap(b.result)
-      }.result
-      new SettingMap(settingsMap)
+    val settingsMap = b.iterator.foldLeft(ListMap.newBuilder[AnyName, ScopeInitMap]) {
+      case (acc, (name, b)) => acc += name -> ScopeInitMap(b.result)
     }
+    new SettingMap(settingsMap.result)
   }
 }
 
