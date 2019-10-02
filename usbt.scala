@@ -41,6 +41,12 @@ object Scope {
       case x: Proj   => x
     }
   }
+
+  val delegates: ResolvedScope => Stream[ResolvedScope] = {
+    case scope @ (_: Proj) => scope #:: delegates(ThisBuild)
+    case scope @ ThisBuild => scope #:: delegates(Global)
+    case scope @ Global    => scope #:: Stream.empty
+  }
 }
 
 /** A map of Name -> Scope -> Init.
@@ -51,14 +57,8 @@ object Scope {
  */
 final case class SettingMap private (underlying: Map[AnyName, Map[ResolvedScope, AnyInit]]) {
   def getInit[A](key: Key[A], scope: ResolvedScope): Option[Init[A]] = {
-    underlying.get(key.name).flatMap { underlying =>
-      def getGlobal    = underlying.get(Global)
-      def getThisBuild = underlying.get(ThisBuild).orElse(getGlobal)
-      scope match {
-        case Global    => getGlobal
-        case ThisBuild => getThisBuild
-        case Proj(_)   => underlying.get(scope).orElse(getThisBuild)
-      }
+    underlying.get(key.name).flatMap { scopeToInitMap =>
+      Scope.delegates(scope).flatMap(scopeToInitMap.get(_)).headOption
     }.asInstanceOf[Option[Init[A]]] // TODO: test this failure
   }
 
