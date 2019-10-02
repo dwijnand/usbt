@@ -62,11 +62,7 @@ final case class SettingMap private (underlying: Map[AnyName, Map[ResolvedScope,
     }.asInstanceOf[Option[Init[A]]] // TODO: test this failure
   }
 
-  def getValue[A](key: Key[A]): Option[A] = {
-    val init: Init[A] = key // the target `Init` to resolve the `key` itself
-    val scope: ResolvedScope = key.scope.or(Global) // resolve the scope, using Global as the fallback
-    evalInit(scope)(init)
-  }
+  def getValue[A](key: Key[A]): Option[A] = evalInit(key.scope.or(Global))(key)
 
   private def evalInit[A](fallbackScope: ResolvedScope): Init[A] => Option[A] = {
     val eval = new ~>[Init, Option] { eval =>
@@ -75,9 +71,7 @@ final case class SettingMap private (underlying: Map[AnyName, Map[ResolvedScope,
         case Init.Map(init, f)     => eval(init).map(f)
         case Init.ZipWith(x, y, f) => eval(x).flatMap(a => eval(y).map(f(a, _)))
         case Init.FlatMap(init, f) => eval(init).flatMap(s => eval(f(s)))
-        case key: Key[T]           =>
-          val scope = key.scope.or(fallbackScope) // resolve the scope, using the previous scope as the fallback
-          getInit(key, scope).flatMap(eval(_))
+        case key: Key[T]           => getInit(key, key.scope.or(fallbackScope)).flatMap(eval(_))
       }
     }
     eval[A]
@@ -86,13 +80,13 @@ final case class SettingMap private (underlying: Map[AnyName, Map[ResolvedScope,
 
 object SettingMap {
   import scala.collection.immutable.ListMap
-  import scala.collection.mutable.LinkedHashMap
+  import scala.collection.mutable
 
   def fromVarargs(settings: AnySetting*): SettingMap = {
-    val b = settings.foldLeft(LinkedHashMap.empty[AnyName, LinkedHashMap[ResolvedScope, AnyInit]]) {
+    val b = settings.foldLeft(mutable.LinkedHashMap.empty[AnyName, mutable.LinkedHashMap[ResolvedScope, AnyInit]]) {
       case (acc, Setting(Key(name, scope0), init)) =>
-        val scopeMap = acc.getOrElse(name, LinkedHashMap.empty[ResolvedScope, AnyInit])
-        val scope = scope0.or(Global) // resolve the scope, using Global as the fallback
+        val scopeMap = acc.getOrElse(name, mutable.LinkedHashMap.empty[ResolvedScope, AnyInit])
+        val scope = scope0.or(Global) // resolve the scope, replacing This with Global
         scopeMap += scope -> init // override previous mapping at given `scope` (and `name`)
         acc += name -> scopeMap
     }
