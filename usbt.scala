@@ -18,13 +18,13 @@ final case class Key[A](name: Name[A], scope: Scope) extends Init[A] {
 sealed abstract class Init[+A] {
   final def map[B](f: A => B): Init[B]                         = Init.Mapped(this, f)
   final def zipWith[B, C](y: Init[B])(f: (A, B) => C): Init[C] = Init.ZipWith(this, y, f)
-  final def flatMap[B](f: A => Init[B]): Init[B]               = Init.Bind(this, f)
+  final def flatMap[B](f: A => Init[B]): Init[B]               = Init.FlatMap(this, f)
 }
 object Init {
   final case class Value[A](value: A)                                       extends Init[A]
   final case class Mapped[A, B](init: Init[A], f: A => B)                   extends Init[B]
   final case class ZipWith[A, B, C](x: Init[A], y: Init[B], f: (A, B) => C) extends Init[C]
-  final case class Bind[A, B](init: Init[A], f: A => Init[B])               extends Init[B]
+  final case class FlatMap[A, B](init: Init[A], f: A => Init[B])            extends Init[B]
 }
 
 final case class Setting[A](key: Key[A], init: Init[A])
@@ -63,7 +63,7 @@ final case class SettingMap private (underlying: Map[AnyName, ScopeInitMap]) {
         case Init.Value(x)         => Some(x)
         case Init.Mapped(init, f)  => eval(init).map(f)
         case Init.ZipWith(x, y, f) => eval(x).flatMap(xx => eval(y).map(f(xx, _)))
-        case Init.Bind(init, f)    => eval(init).map(f).flatMap(eval(_))
+        case Init.FlatMap(init, f) => eval(init).map(f).flatMap(eval(_))
         case key: Key[T]           =>
           val scope = key.scope.or(fallbackScope) // resolve the scope, using the previous scope as the fallback
           getInit(key, scope).flatMap(eval(_))

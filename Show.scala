@@ -40,7 +40,7 @@ object Show {
     case Init.Value(x)         => show(x)
     case Init.Mapped(init, f)  => show"$init.map($f)"
     case Init.ZipWith(x, y, f) => show"$x.zipWith($y($f)"
-    case Init.Bind(init, f)    => show"$init.flatMap($f)"
+    case Init.FlatMap(init, f) => show"$init.flatMap($f)"
     case x: Key[a]             => show(x)
   }
 
