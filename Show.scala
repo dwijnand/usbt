@@ -14,7 +14,6 @@ object Show {
   implicit def showF1[A, B]: Show[A => B]             = _ => "<f>"
   implicit def showF2[A, B, C]: Show[(A, B) => C]     = _ => "<f>"
   implicit def showOption[A: Show]: Show[Option[A]]   = _.fold("None")(x => show"Some($x)")
-  implicit def showName[A]: Show[Name[A]]             = _.value
   implicit def showResolvedScope: Show[ResolvedScope] = show(_: Scope)
   implicit def showInitPure[A]: Show[Init.Pure[A]]    = show(_: Init[A])
 

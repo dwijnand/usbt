@@ -7,11 +7,9 @@ object Main {
     def /(s: String) = if (self.endsWith("/")) self + s else self + "/" + s
   }
 
-  def key[A](name: String): Key[A] = Key(Name(name), This)
-
-  val foo = key[String]("foo")
-  val bar = key[String]("bar")
-  val baz = key[String]("baz")
+  val foo = Key[String]("foo")
+  val bar = Key[String]("bar")
+  val baz = Key[String]("baz")
 
   val bippy = Proj("bippy")
 
@@ -33,14 +31,14 @@ object Main {
   }
 
   def testStd = Test {
-    val        baseDir     = key[String](       "baseDir")
-    val         srcDir     = key[String](        "srcDir")
-    val      targetDir     = key[String](     "targetDir")
-    val    scalaSrcDir     = key[String](   "scalaSrcDir")
-    val        srcDirs     = key[Seq[String]]("srcDirs")
-    val crossTargetDir     = key[String]("crossTargetDir")
-    val scalaVersion       = key[String]("scalaVersion")
-    val scalaBinaryVersion = key[String]("scalaBinaryVersion")
+    val        baseDir     = Key[String](       "baseDir")
+    val         srcDir     = Key[String](        "srcDir")
+    val      targetDir     = Key[String](     "targetDir")
+    val    scalaSrcDir     = Key[String](   "scalaSrcDir")
+    val        srcDirs     = Key[Seq[String]]("srcDirs")
+    val crossTargetDir     = Key[String]("crossTargetDir")
+    val scalaVersion       = Key[String]("scalaVersion")
+    val scalaBinaryVersion = Key[String]("scalaBinaryVersion")
 
     val settings: Settings = Settings(Seq(
                   srcDir in Global    <<= baseDir.map(_ / "src"),
@@ -83,7 +81,7 @@ object Main {
   }
 
   def testKeyDup = Test {
-    val foo2 = key[Int]("foo")
+    val foo2 = Key[Int]("foo")
     val settings = Settings(Seq(foo := "a"))
     try {
       val result: Option[Int] = settings.getValue(foo2)
