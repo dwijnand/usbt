@@ -27,10 +27,10 @@ object Main {
           println(show"For $desc: Expected $expected, Actual $actual")
     }
 
-    def assertSettings[A](settingsMap: SettingMap)(ss: AnySetting*) = {
-      println(show(settingsMap))
+    def assertSettings[A](Settings: Settings)(ss: AnySetting*) = {
+      println(show(Settings))
       ss.foreach(x => (x: @unchecked) match { case Setting(key, Init.Pure(value)) =>
-        assertEquals[Any](settingsMap.getValue(key), Some(value), show(key))
+        assertEquals(Settings.getValue(key), Some(value), show(key))(_.toString)
       })
     }
 
@@ -46,7 +46,7 @@ object Main {
       val scalaVersion       = key[String]("scalaVersion")
       val scalaBinaryVersion = key[String]("scalaBinaryVersion")
 
-      val settingsMap: SettingMap = SettingMap.fromVarargs(
+      val settings: Settings = Settings(Seq(
                     srcDir in Global    <<= baseDir.map(_ / "src"),
                  targetDir in Global    <<= baseDir.map(_ / "target"),
                scalaSrcDir in Global    <<= srcDir.map(_ / "main/scala"),
@@ -56,9 +56,9 @@ object Main {
         scalaVersion       in ThisBuild  := "2.12.8",
         scalaBinaryVersion in ThisBuild  := "2.12",
                    baseDir in bippy      := "/bippy",
-      )
+      ))
 
-      assertSettings(settingsMap)(
+      assertSettings(settings)(
         srcDir in ThisBuild    := "/src",
         srcDir in bippy        := "/bippy/src",
 
@@ -74,12 +74,12 @@ object Main {
       )
     }
 
-    assertSettings(SettingMap.fromVarargs(
+    assertSettings(Settings(Seq(
       foo in Global  := "g",
       foo in bippy   := "b",
       bar in bippy  <<= foo,
       baz in bippy  <<= foo in Global,
-    ))(
+    )))(
       bar in bippy := "b",
       baz in bippy := "g",
     )

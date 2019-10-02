@@ -55,9 +55,13 @@ object Scope {
  *  baseDir -> Global -> Init.Pure(/)
  *  baseDir -> bippy  -> Init.Pure(/foo)
  */
-final case class SettingMap private (underlying: Map[AnyName, Map[ResolvedScope, AnyInit]]) {
+final case class Settings(value: Seq[AnySetting]) {
+  private val lookup: Map[AnyName, Map[ResolvedScope, AnyInit]] = {
+    value.groupMapReduce(_.key.name)(s => Map(s.key.scope.or(Global) -> s.init))(_ ++ _)
+  }
+
   def getInit[A](key: Key[A], scope: ResolvedScope): Option[Init[A]] = {
-    underlying.get(key.name).flatMap { scopeToInitMap =>
+    lookup.get(key.name).flatMap { scopeToInitMap =>
       Scope.delegates(scope).flatMap(scopeToInitMap.get(_)).headOption
     }.asInstanceOf[Option[Init[A]]] // TODO: test this failure
   }
@@ -75,26 +79,6 @@ final case class SettingMap private (underlying: Map[AnyName, Map[ResolvedScope,
       }
     }
     eval[A]
-  }
-}
-
-object SettingMap {
-  import scala.collection.immutable.ListMap
-  import scala.collection.mutable
-
-  def fromVarargs(settings: AnySetting*): SettingMap = {
-    val b = settings.foldLeft(mutable.LinkedHashMap.empty[AnyName, mutable.LinkedHashMap[ResolvedScope, AnyInit]]) {
-      case (acc, Setting(Key(name, scope0), init)) =>
-        val scopeMap = acc.getOrElse(name, mutable.LinkedHashMap.empty[ResolvedScope, AnyInit])
-        val scope = scope0.or(Global) // resolve the scope, replacing This with Global
-        scopeMap += scope -> init // override previous mapping at given `scope` (and `name`)
-        acc += name -> scopeMap
-    }
-    new SettingMap(toListMap(b)(toListMap(_)(identity)))
-  }
-
-  private def toListMap[K, V, V2](xs: Iterable[(K, V)])(f: V => V2): Map[K, V2] = {
-    xs.foldLeft(ListMap.newBuilder[K, V2]) { case (acc, (k, v)) => acc += k -> f(v) }.result
   }
 }
 
