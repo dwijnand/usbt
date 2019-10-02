@@ -1,5 +1,11 @@
 package usbt
 
+final case class Key[A](name: String, scope: Scope = This) extends Init[A] {
+  def in(scope: Scope): Key[A]       = Key(name, scope)
+  def <<=(init: Init[A]): Setting[A] = Setting(this, init)
+  def :=(value: A): Setting[A]       = this <<= Init.Pure(value)
+}
+
 sealed abstract class Init[+A]
 object Init {
   final case class Pure[A](value: A)                                        extends Init[A]
@@ -12,12 +18,6 @@ object Init {
     final def zipWith[B, C](y: Init[B])(f: (A, B) => C): Init[C] = Init.ZipWith(init, y, f)
     final def flatMap[B](f: A => Init[B]): Init[B]               = Init.FlatMap(init, f)
   }
-}
-
-final case class Key[A](name: String, scope: Scope = This) extends Init[A] {
-  def in(scope: Scope): Key[A]       = Key(name, scope)
-  def <<=(init: Init[A]): Setting[A] = Setting(this, init)
-  def :=(value: A): Setting[A]       = this <<= Init.Pure(value)
 }
 
 final case class Setting[A](key: Key[A], init: Init[A])
