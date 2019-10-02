@@ -33,13 +33,15 @@ object Init {
 
 final case class Setting[A](key: Key[A], init: Init[A])
 
-final class ScopeOps(scope: Scope) {
-  /** Returns this scope, if it's already resolved, or the given resolved fallback. */
-  def or(fallback: ResolvedScope): ResolvedScope = scope match {
-    case This            => fallback
-    case Global          => Global
-    case ThisBuild       => ThisBuild
-    case x: LocalProject => x
+object Scope {
+  implicit class ScopeOps(private val scope: Scope) {
+    /** Returns this scope, if it's already resolved, or the given resolved fallback. */
+    def or(fallback: ResolvedScope): ResolvedScope = scope match {
+      case This            => fallback
+      case Global          => Global
+      case ThisBuild       => ThisBuild
+      case x: LocalProject => x
+    }
   }
 }
 
@@ -112,8 +114,6 @@ object `package` {
   type AnySetting = Setting[_]
 
   def show[A](x: A)(implicit z: Show[A]) = z.show(x)
-
-  implicit def scopeOps(scope: Scope): ScopeOps = new ScopeOps(scope)
 }
 
 /** Natural transformation. */
