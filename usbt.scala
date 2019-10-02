@@ -33,7 +33,6 @@ final case class Proj(id: String) extends ResolvedScope
 
 object Scope {
   implicit class ScopeOps(private val scope: Scope) extends AnyVal {
-    /** Returns this scope, if it's already resolved, or the given resolved fallback. */
     def or(fallback: ResolvedScope): ResolvedScope = scope match {
       case This      => fallback
       case Global    => Global
@@ -49,18 +48,12 @@ object Scope {
   }
 }
 
-/** A map of Name -> Scope -> Init.
- *
- *  An example:
- *  baseDir -> Global -> Init.Pure(/)
- *  baseDir -> bippy  -> Init.Pure(/foo)
- */
-final case class Settings(value: Seq[AnySetting]) {
-  private val lookup: Map[AnyName, Map[ResolvedScope, AnyInit]] = {
+final case class Settings(value: Seq[Setting[_]]) {
+  private val lookup: Map[Name[_], Map[ResolvedScope, Init[_]]] = {
     value.groupMapReduce(_.key.name)(s => Map(s.key.scope.or(Global) -> s.init))(_ ++ _)
   }
 
-  def getInit[A](key: Key[A], scope: ResolvedScope): Option[Init[A]] = {
+  private def getInit[A](key: Key[A], scope: ResolvedScope): Option[Init[A]] = {
     lookup.get(key.name).flatMap { scopeToInitMap =>
       Scope.delegates(scope).flatMap(scopeToInitMap.get(_)).headOption
     }.asInstanceOf[Option[Init[A]]]
@@ -83,10 +76,6 @@ final case class Settings(value: Seq[AnySetting]) {
 }
 
 object `package` {
-  type AnyName    = Name[_]
-  type AnyInit    = Init[_]
-  type AnySetting = Setting[_]
-
   def show[A](x: A)(implicit z: Show[A]) = z.show(x)
   implicit def showInterpolator(sc: StringContext): Show.ShowInterpolator = new Show.ShowInterpolator(sc)
 }
