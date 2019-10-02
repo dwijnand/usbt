@@ -42,10 +42,10 @@ object Scope {
     }
   }
 
-  val delegates: ResolvedScope => Stream[ResolvedScope] = {
+  val delegates: ResolvedScope => LazyList[ResolvedScope] = {
     case scope @ (_: Proj) => scope #:: delegates(ThisBuild)
     case scope @ ThisBuild => scope #:: delegates(Global)
-    case scope @ Global    => scope #:: Stream.empty
+    case scope @ Global    => scope #:: LazyList.empty
   }
 }
 
