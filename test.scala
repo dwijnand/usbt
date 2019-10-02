@@ -15,7 +15,8 @@ object Main {
 
   val bippy = Proj("bippy")
 
-  def assertEquals[A: Show](actual: A, expected: A, desc: String = "") = {
+  def assertEquals[A](actual: A, expected: A, desc: String = "") = {
+    implicit val z: Show[A] = _.toString
     if (actual == expected)
       None
     else if (desc == "")
@@ -27,7 +28,7 @@ object Main {
   def assertSettings[A](settings: Settings)(ss: AnySetting*) = {
     println(show(settings))
     ss.flatMap(x => (x: @unchecked) match { case Setting(key, Init.Pure(value)) =>
-      assertEquals(settings.getValue(key), Some(value), show(key))(_.toString)
+      assertEquals(settings.getValue(key), Some(value), show(key))
     })
   }
 
@@ -81,12 +82,18 @@ object Main {
     )
   }
 
-  // TODO: classpathOptions (in console) https://github.com/lampepfl/dotty/pull/6577/files
-  // TODO: Compile/Test vs console scopes
-  // TODO: alternative https://www.scala-sbt.org/1.x/docs/Scope-Delegation.html
-  // TODO: add tasks
-  // TODO: add input tasks
-  def tests = Tests(Seq(testStd, testDispatch))
+  def testKeyDup = Test {
+    val foo2 = key[Int]("foo")
+    val settings = Settings(Seq(foo := "a"))
+    try {
+      val result: Option[Int] = settings.getValue(foo2)
+      List(show"Expected an exception, but got $result")
+    } catch {
+      case _: ClassCastException => Nil
+    }
+  }
+
+  def tests = Tests(Seq(testStd, testDispatch, testKeyDup))
   def main(args: Array[String]): Unit = runTest(tests)
   def runTest(test: Test): Unit = test match {
     case TestCase(thunk) => thunk().foreach(s => println(s"${Console.RED}ERR${Console.RESET} $s"))

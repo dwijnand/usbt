@@ -63,7 +63,7 @@ final case class Settings(value: Seq[AnySetting]) {
   def getInit[A](key: Key[A], scope: ResolvedScope): Option[Init[A]] = {
     lookup.get(key.name).flatMap { scopeToInitMap =>
       Scope.delegates(scope).flatMap(scopeToInitMap.get(_)).headOption
-    }.asInstanceOf[Option[Init[A]]] // TODO: test this failure
+    }.asInstanceOf[Option[Init[A]]]
   }
 
   def getValue[A](key: Key[A]): Option[A] = evalInit(key.scope.or(Global))(key)

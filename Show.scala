@@ -9,6 +9,7 @@ object Show {
 
   def wrappedString(s: String): String = show""""$s""""
 
+  implicit def showInt: Show[Int]                     = _.toString
   implicit def showString: Show[String]               = identity(_)
   implicit def showF1[A, B]: Show[A => B]             = _ => "<f>"
   implicit def showF2[A, B, C]: Show[(A, B) => C]     = _ => "<f>"
