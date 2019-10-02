@@ -61,17 +61,14 @@ final case class Settings(value: Seq[Setting[_]]) {
 
   def getValue[A](key: Key[A]): Option[A] = evalInit(key.scope.or(Global))(key)
 
-  private def evalInit[A](fallbackScope: ResolvedScope): Init[A] => Option[A] = {
-    val eval = new ~>[Init, Option] { eval =>
-      def apply[T](x: Init[T]): Option[T] = x match {
-        case Init.Pure(x)          => Some(x)
-        case Init.Map(init, f)     => eval(init).map(f)
-        case Init.ZipWith(x, y, f) => eval(x).flatMap(a => eval(y).map(f(a, _)))
-        case Init.FlatMap(init, f) => eval(init).flatMap(s => eval(f(s)))
-        case key: Key[T]           => getInit(key, key.scope.or(fallbackScope)).flatMap(eval(_))
-      }
+  private def evalInit(fallbackScope: ResolvedScope): Init ~> Option = new ~>[Init, Option] { eval =>
+    def apply[T](x: Init[T]): Option[T] = x match {
+      case Init.Pure(x)          => Some(x)
+      case Init.Map(init, f)     => eval(init).map(f)
+      case Init.ZipWith(x, y, f) => eval(x).flatMap(a => eval(y).map(f(a, _)))
+      case Init.FlatMap(init, f) => eval(init).flatMap(s => eval(f(s)))
+      case key: Key[T]           => getInit(key, key.scope.or(fallbackScope)).flatMap(eval(_))
     }
-    eval[A]
   }
 }
 

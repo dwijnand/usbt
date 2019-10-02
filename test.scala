@@ -25,7 +25,7 @@ object Main {
       Some(show"For $desc: Expected $expected, Actual $actual")
   }
 
-  def assertSettings[A](settings: Settings)(ss: AnySetting*) = {
+  def assertSettings[A](settings: Settings)(ss: Setting[_]*) = {
     println(show(settings))
     ss.flatMap(x => (x: @unchecked) match { case Setting(key, Init.Pure(value)) =>
       assertEquals(settings.getValue(key), Some(value), show(key))
