@@ -1,5 +1,7 @@
 package usbt
 
+import scala.util.chaining._
+
 trait Show[A] {
   def show(x: A): String
 }
@@ -8,10 +10,7 @@ object Show {
   def apply[A](implicit z: Show[A]): Show[A] = z
 
   def wrappedString(s: String): String  = show""""$s""""
-  def showParens[A: Show](x: A): String = {
-    val res = show(x) // use tap
-    if (res.contains(' ')) show"($res)" else res
-  }
+  def showParens[A: Show](x: A): String = show(x).pipe(s => if (s.contains(' ')) show"($s)" else s)
 
   implicit def showInt: Show[Int]                     = _.toString
   implicit def showString: Show[String]               = identity(_)
