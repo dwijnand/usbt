@@ -39,7 +39,7 @@ object Show {
     case Init.Pure(x: String)  => wrappedString(x)
     case Init.Pure(x)          => show(x)
     case Init.Map(init, f)     => show"$init.map($f)"
-    case Init.ZipWith(x, y, f) => show"$x.zipWith($y($f)"
+    case Init.ZipWith(x, y, f) => show"$x.zipWith($y)($f)"
     case Init.FlatMap(init, f) => show"$init.flatMap($f)"
     case x: Key[a]             => show(x)
   }
