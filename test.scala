@@ -7,73 +7,69 @@ object Main {
     def /(s: String) = if (self.endsWith("/")) self + s else self + "/" + s
   }
 
-  // TODO: classpathOptions (in console) https://github.com/lampepfl/dotty/pull/6577/files
-  // TODO: Compile/Test vs console scopes
-  // TODO: alternative https://www.scala-sbt.org/1.x/docs/Scope-Delegation.html
-  // TODO: add tasks
-  // TODO: add input tasks
-  def main(args: Array[String]): Unit = {
-    def key[A](name: String): Key[A] = Key(Name(name), This)
+  def key[A](name: String): Key[A] = Key(Name(name), This)
 
-    val foo = key[String]("foo")
-    val bar = key[String]("bar")
-    val baz = key[String]("baz")
+  val foo = key[String]("foo")
+  val bar = key[String]("bar")
+  val baz = key[String]("baz")
 
-    val bippy = Proj("bippy")
+  val bippy = Proj("bippy")
 
-    def assertEquals[A: Show](actual: A, expected: A, desc: String = "") = {
-      if (actual != expected)
-        if (desc == "") println(show"Expected $expected, Actual $actual") else
-          println(show"For $desc: Expected $expected, Actual $actual")
-    }
+  def assertEquals[A: Show](actual: A, expected: A, desc: String = "") = {
+    if (actual == expected)
+      None
+    else if (desc == "")
+      Some(show"Expected $expected, Actual $actual")
+    else
+      Some(show"For $desc: Expected $expected, Actual $actual")
+  }
 
-    def assertSettings[A](Settings: Settings)(ss: AnySetting*) = {
-      println(show(Settings))
-      ss.foreach(x => (x: @unchecked) match { case Setting(key, Init.Pure(value)) =>
-        assertEquals(Settings.getValue(key), Some(value), show(key))(_.toString)
-      })
-    }
+  def assertSettings[A](settings: Settings)(ss: AnySetting*) = {
+    println(show(settings))
+    ss.flatMap(x => (x: @unchecked) match { case Setting(key, Init.Pure(value)) =>
+      assertEquals(settings.getValue(key), Some(value), show(key))(_.toString)
+    })
+  }
 
-    def ignore(x: => Any) = ()
+  def testStd = Test {
+    val        baseDir     = key[String](       "baseDir")
+    val         srcDir     = key[String](        "srcDir")
+    val      targetDir     = key[String](     "targetDir")
+    val    scalaSrcDir     = key[String](   "scalaSrcDir")
+    val        srcDirs     = key[Seq[String]]("srcDirs")
+    val crossTargetDir     = key[String]("crossTargetDir")
+    val scalaVersion       = key[String]("scalaVersion")
+    val scalaBinaryVersion = key[String]("scalaBinaryVersion")
 
-    {
-      val        baseDir     = key[String](       "baseDir")
-      val         srcDir     = key[String](        "srcDir")
-      val      targetDir     = key[String](     "targetDir")
-      val    scalaSrcDir     = key[String](   "scalaSrcDir")
-      val        srcDirs     = key[Seq[String]]("srcDirs")
-      val crossTargetDir     = key[String]("crossTargetDir")
-      val scalaVersion       = key[String]("scalaVersion")
-      val scalaBinaryVersion = key[String]("scalaBinaryVersion")
+    val settings: Settings = Settings(Seq(
+                  srcDir in Global    <<= baseDir.map(_ / "src"),
+               targetDir in Global    <<= baseDir.map(_ / "target"),
+             scalaSrcDir in Global    <<= srcDir.map(_ / "main/scala"),
+                 srcDirs in Global    <<= scalaSrcDir.zipWith(scalaBinaryVersion)((dir, sbv) => Seq(dir, show"$dir-$sbv")),
+          crossTargetDir in Global    <<= targetDir.zipWith(scalaBinaryVersion)((target, sbv) => target / show"scala-$sbv"),
+                 baseDir in ThisBuild  := "/",
+      scalaVersion       in ThisBuild  := "2.12.8",
+      scalaBinaryVersion in ThisBuild  := "2.12",
+                 baseDir in bippy      := "/bippy",
+    ))
 
-      val settings: Settings = Settings(Seq(
-                    srcDir in Global    <<= baseDir.map(_ / "src"),
-                 targetDir in Global    <<= baseDir.map(_ / "target"),
-               scalaSrcDir in Global    <<= srcDir.map(_ / "main/scala"),
-                   srcDirs in Global    <<= scalaSrcDir.zipWith(scalaBinaryVersion)((dir, sbv) => Seq(dir, show"$dir-$sbv")),
-            crossTargetDir in Global    <<= targetDir.zipWith(scalaBinaryVersion)((target, sbv) => target / show"scala-$sbv"),
-                   baseDir in ThisBuild  := "/",
-        scalaVersion       in ThisBuild  := "2.12.8",
-        scalaBinaryVersion in ThisBuild  := "2.12",
-                   baseDir in bippy      := "/bippy",
-      ))
+    assertSettings(settings)(
+      srcDir in ThisBuild    := "/src",
+      srcDir in bippy        := "/bippy/src",
 
-      assertSettings(settings)(
-        srcDir in ThisBuild    := "/src",
-        srcDir in bippy        := "/bippy/src",
+      targetDir in ThisBuild := "/target",
+      targetDir in bippy     := "/bippy/target",
 
-        targetDir in ThisBuild := "/target",
-        targetDir in bippy     := "/bippy/target",
+            scalaVersion in bippy := "2.12.8",
+      scalaBinaryVersion in bippy := "2.12",
 
-              scalaVersion in bippy := "2.12.8",
-        scalaBinaryVersion in bippy := "2.12",
+         scalaSrcDir in bippy := "/bippy/src/main/scala",
+             srcDirs in bippy := Seq("/bippy/src/main/scala", "/bippy/src/main/scala-2.12"),
+      crossTargetDir in bippy := "/bippy/target/scala-2.12",
+    )
+  }
 
-           scalaSrcDir in bippy := "/bippy/src/main/scala",
-               srcDirs in bippy := Seq("/bippy/src/main/scala", "/bippy/src/main/scala-2.12"),
-        crossTargetDir in bippy := "/bippy/target/scala-2.12",
-      )
-    }
-
+  def testDispatch = Test {
     assertSettings(Settings(Seq(
       foo in Global  := "g",
       foo in bippy   := "b",
@@ -83,5 +79,24 @@ object Main {
       bar in bippy := "b",
       baz in bippy := "g",
     )
+  }
+
+  // TODO: classpathOptions (in console) https://github.com/lampepfl/dotty/pull/6577/files
+  // TODO: Compile/Test vs console scopes
+  // TODO: alternative https://www.scala-sbt.org/1.x/docs/Scope-Delegation.html
+  // TODO: add tasks
+  // TODO: add input tasks
+  def tests = Tests(Seq(testStd, testDispatch))
+  def main(args: Array[String]): Unit = runTest(tests)
+  def runTest(test: Test): Unit = test match {
+    case TestCase(thunk) => thunk().foreach(s => println(s"${Console.RED}ERR${Console.RESET} $s"))
+    case Tests(tests)    => tests.foreach(runTest)
+  }
+
+  sealed trait Test
+  final case class TestCase(thunk: () => Seq[String]) extends Test
+  final case class Tests(value: Seq[Test])            extends Test
+  object Test {
+    def apply(thunk: => Seq[String]): TestCase = TestCase(() => thunk)
   }
 }
