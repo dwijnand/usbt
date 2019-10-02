@@ -1,13 +1,13 @@
 package usbt
 
-final case class Name[A](value: String) { override def toString = value }
+final case class Name[A](value: String)
 
 sealed trait Scope
 sealed trait ResolvedScope extends Scope // "Resolved" means doesn't rely on context (fully-qualified)
 case object This      extends Scope
 case object Global    extends ResolvedScope
 case object ThisBuild extends ResolvedScope // not really resolved
-final case class LocalProject(id: String) extends ResolvedScope { override def toString = id }
+final case class LocalProject(id: String) extends ResolvedScope
 
 final case class Key[A](name: Name[A], scope: Scope) extends Init[A] {
   def in(scope: Scope): Key[A]       = Key(name, scope)
@@ -23,14 +23,6 @@ sealed abstract class Init[+A] {
   final def map[B](f: A => B): Init[B]                         = Init.Mapped(this, f)
   final def zipWith[B, C](y: Init[B])(f: (A, B) => C): Init[C] = Init.ZipWith(this, y, f)
   final def flatMap[B](f: A => Init[B]): Init[B]               = Init.Bind(this, f)
-
-  final override def toString = this match {
-    case Init.Value(x)         => if (x.isInstanceOf[String]) s""""$x"""" else s"$x"
-    case Init.Mapped(init, _)  => s"$init.map(<f>)"
-    case Init.ZipWith(x, y, _) => s"$x.zipWith($y)(<f>)"
-    case Init.Bind(init, _)    => s"$init.flatMap(<f>)"
-    case Key(name, scope)      => if (scope == This) s"$name" else s"$scope / $name"
-  }
 }
 object Init {
   final case class Value[A](value: A)                                       extends Init[A]
@@ -39,9 +31,7 @@ object Init {
   final case class Bind[A, B](init: Init[A], f: A => Init[B])               extends Init[B]
 }
 
-final case class Setting[A](key: Key[A], init: Init[A]) {
-  override def toString = key + (if (init.isInstanceOf[Init.Value[_]]) "  := " else " <<= ") + init
-}
+final case class Setting[A](key: Key[A], init: Init[A])
 
 final class ScopeOps(scope: Scope) {
   /** Returns this scope, if it's already resolved, or the given resolved fallback. */
@@ -83,23 +73,6 @@ final case class SettingMap private (underlying: Map[AnyName, ScopeInitMap]) {
     }
     eval[A](init)
   }
-
-  override def toString = underlying.mkString("SettingMap [\n  ", "\n  ", "\n]")
-}
-
-final case class ScopeInitMap private (underlying: Map[ResolvedScope, AnyInit]) {
-  def get(scope: ResolvedScope): Option[AnyInit] = {
-    def getGlobal    = underlying.get(Global)
-    def getThisBuild = underlying.get(ThisBuild).orElse(getGlobal)
-    scope match {
-      case Global          => getGlobal
-      case ThisBuild       => getThisBuild
-      case LocalProject(_) => underlying.get(scope).orElse(getThisBuild)
-    }
-  }
-
-  override def toString =
-    if (underlying.size <= 1) underlying.mkString else underlying.mkString("[ ", ", ", " ]")
 }
 
 object SettingMap {
@@ -121,12 +94,24 @@ object SettingMap {
   }
 }
 
-object `package` {
-  type Id[X] = X
+final case class ScopeInitMap private (underlying: Map[ResolvedScope, AnyInit]) {
+  def get(scope: ResolvedScope): Option[AnyInit] = {
+    def getGlobal    = underlying.get(Global)
+    def getThisBuild = underlying.get(ThisBuild).orElse(getGlobal)
+    scope match {
+      case Global          => getGlobal
+      case ThisBuild       => getThisBuild
+      case LocalProject(_) => underlying.get(scope).orElse(getThisBuild)
+    }
+  }
+}
 
+object `package` {
   type AnyName    = Name[_]
   type AnyInit    = Init[_]
   type AnySetting = Setting[_]
+
+  def show[A](x: A)(implicit z: Show[A]) = z.show(x)
 
   implicit def scopeOps(scope: Scope): ScopeOps = new ScopeOps(scope)
 }

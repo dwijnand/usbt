@@ -26,9 +26,9 @@ object Main {
     }
 
     def assertSettings[A](settingsMap: SettingMap)(ss: AnySetting*) = {
-      println(settingsMap)
+      println(show(settingsMap))
       ss.foreach(x => (x: @unchecked) match { case Setting(key, Init.Value(value)) =>
-        assertEquals(settingsMap.getValue(key), Some(value), key.toString)
+        assertEquals(settingsMap.getValue(key), Some(value), show(key))
       })
     }
 
