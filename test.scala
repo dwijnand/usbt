@@ -7,11 +7,11 @@ object Main {
     def /(s: String) = if (self.endsWith("/")) self + s else self + "/" + s
   }
 
-  // classpathOptions (in console) https://github.com/lampepfl/dotty/pull/6577/files
-  // Compile/Test vs console scopes
-  // alternative https://www.scala-sbt.org/1.x/docs/Scope-Delegation.html
-  // add tasks
-  // add input tasks
+  // TODO: classpathOptions (in console) https://github.com/lampepfl/dotty/pull/6577/files
+  // TODO: Compile/Test vs console scopes
+  // TODO: alternative https://www.scala-sbt.org/1.x/docs/Scope-Delegation.html
+  // TODO: add tasks
+  // TODO: add input tasks
   def main(args: Array[String]): Unit = {
     def key[A](name: String): Key[A] = Key(Name(name), This)
 
@@ -19,7 +19,7 @@ object Main {
     val bar = key[String]("bar")
     val baz = key[String]("baz")
 
-    val bippy = LocalProject("bippy")
+    val bippy = Proj("bippy")
 
     def assertEquals[A: Show](actual: A, expected: A, desc: String = "") = {
       if (actual != expected)
@@ -29,7 +29,7 @@ object Main {
 
     def assertSettings[A](settingsMap: SettingMap)(ss: AnySetting*) = {
       println(show(settingsMap))
-      ss.foreach(x => (x: @unchecked) match { case Setting(key, Init.Value(value)) =>
+      ss.foreach(x => (x: @unchecked) match { case Setting(key, Init.Pure(value)) =>
         assertEquals[Any](settingsMap.getValue(key), Some(value), show(key))
       })
     }
