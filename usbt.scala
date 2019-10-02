@@ -65,14 +65,14 @@ final case class SettingMap private (underlying: Map[AnyName, Map[ResolvedScope,
   def getValue[A](key: Key[A]): Option[A] = {
     val init: Init[A] = key // the target `Init` to resolve the `key` itself
     val scope: ResolvedScope = key.scope.or(Global) // resolve the scope, using Global as the fallback
-    evalInit(init, scope)
+    evalInit(scope)(init)
   }
 
-  private def evalInit[A](init: Init[A], fallbackScope: ResolvedScope): Option[A] = {
+  private def evalInit[A](fallbackScope: ResolvedScope): Init[A] => Option[A] = {
     val eval = new ~>[Init, Option] { eval =>
       def apply[T](x: Init[T]): Option[T] = x match {
-        case Init.Pure(x)      => Some(x)
-        case Init.Map(init, f) => eval(init).map(f)
+        case Init.Pure(x)          => Some(x)
+        case Init.Map(init, f)     => eval(init).map(f)
         case Init.ZipWith(x, y, f) => eval(x).flatMap(a => eval(y).map(f(a, _)))
         case Init.FlatMap(init, f) => eval(init).flatMap(s => eval(f(s)))
         case key: Key[T]           =>
@@ -80,7 +80,7 @@ final case class SettingMap private (underlying: Map[AnyName, Map[ResolvedScope,
           getInit(key, scope).flatMap(eval(_))
       }
     }
-    eval[A](init)
+    eval[A]
   }
 }
 
