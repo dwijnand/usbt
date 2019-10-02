@@ -7,13 +7,18 @@ trait Show[A] {
 object Show {
   def apply[A](implicit z: Show[A]): Show[A] = z
 
-  def wrappedString(s: String): String = show""""$s""""
+  def wrappedString(s: String): String  = show""""$s""""
+  def showParens[A: Show](x: A): String = {
+    val res = show(x) // use tap
+    if (res.contains(' ')) show"($res)" else res
+  }
 
   implicit def showInt: Show[Int]                     = _.toString
   implicit def showString: Show[String]               = identity(_)
   implicit def showF1[A, B]: Show[A => B]             = _ => "<f>"
   implicit def showF2[A, B, C]: Show[(A, B) => C]     = _ => "<f>"
   implicit def showOption[A: Show]: Show[Option[A]]   = _.fold("None")(x => show"Some($x)")
+  implicit def showList[A: Show]: Show[List[A]]       = _.view.map(show(_)).toIndexedSeq.toString
   implicit def showResolvedScope: Show[ResolvedScope] = show(_: Scope)
   implicit def showInitPure[A]: Show[Init.Pure[A]]    = show(_: Init[A])
 
@@ -32,9 +37,9 @@ object Show {
   implicit def showInit[A]: Show[Init[A]] = {
     case Init.Pure(x: String)  => wrappedString(x)
     case Init.Pure(x)          => x.toString
-    case Init.Map(init, f)     => show"$init.map($f)"
-    case Init.ZipWith(x, y, f) => show"$x.zipWith($y)($f)"
-    case Init.FlatMap(init, f) => show"$init.flatMap($f)"
+    case Init.Map(init, f)     => show"${showParens(init)}.map($f)"
+    case Init.ZipWith(x, y, f) => show"${showParens(x)}.zipWith($y)($f)"
+    case Init.FlatMap(init, f) => show"${showParens(init)}.flatMap($f)"
     case x: Key[a]             => show(x)
   }
 
