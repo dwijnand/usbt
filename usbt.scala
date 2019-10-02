@@ -110,6 +110,7 @@ object `package` {
   type AnySetting = Setting[_]
 
   def show[A](x: A)(implicit z: Show[A]) = z.show(x)
+  implicit def showInterpolator(sc: StringContext): Show.ShowInterpolator = new Show.ShowInterpolator(sc)
 }
 
 /** Natural transformation. */

@@ -21,16 +21,16 @@ object Main {
 
     val bippy = LocalProject("bippy")
 
-    def assertEquals[A](actual: A, expected: A, desc: String = "") = {
+    def assertEquals[A: Show](actual: A, expected: A, desc: String = "") = {
       if (actual != expected)
-        if (desc == "") println(s"Expected $expected, Actual $actual") else
-          println(s"For $desc: Expected $expected, Actual $actual")
+        if (desc == "") println(show"Expected $expected, Actual $actual") else
+          println(show"For $desc: Expected $expected, Actual $actual")
     }
 
     def assertSettings[A](settingsMap: SettingMap)(ss: AnySetting*) = {
       println(show(settingsMap))
       ss.foreach(x => (x: @unchecked) match { case Setting(key, Init.Value(value)) =>
-        assertEquals(settingsMap.getValue(key), Some(value), show(key))
+        assertEquals[Any](settingsMap.getValue(key), Some(value), show(key))
       })
     }
 
@@ -50,8 +50,8 @@ object Main {
                     srcDir in Global    <<= baseDir.map(_ / "src"),
                  targetDir in Global    <<= baseDir.map(_ / "target"),
                scalaSrcDir in Global    <<= srcDir.map(_ / "main/scala"),
-                   srcDirs in Global    <<= scalaSrcDir.zipWith(scalaBinaryVersion)((dir, sbv) => Seq(dir, s"$dir-$sbv")),
-            crossTargetDir in Global    <<= targetDir.zipWith(scalaBinaryVersion)((target, sbv) => target / s"scala-$sbv"),
+                   srcDirs in Global    <<= scalaSrcDir.zipWith(scalaBinaryVersion)((dir, sbv) => Seq(dir, show"$dir-$sbv")),
+            crossTargetDir in Global    <<= targetDir.zipWith(scalaBinaryVersion)((target, sbv) => target / show"scala-$sbv"),
                    baseDir in ThisBuild  := "/",
         scalaVersion       in ThisBuild  := "2.12.8",
         scalaBinaryVersion in ThisBuild  := "2.12",
