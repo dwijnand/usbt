@@ -13,11 +13,13 @@ object Main {
   // add tasks
   // add input tasks
   def main(args: Array[String]): Unit = {
-    val bippy = LocalProject("bippy")
+    def key[A](name: String): Key[A] = Key(Name(name), This)
 
-    val foo = Key[String]("foo")
-    val bar = Key[String]("bar")
-    val baz = Key[String]("baz")
+    val foo = key[String]("foo")
+    val bar = key[String]("bar")
+    val baz = key[String]("baz")
+
+    val bippy = LocalProject("bippy")
 
     def assertEquals[A](actual: A, expected: A, desc: String = "") = {
       if (actual != expected)
@@ -35,14 +37,14 @@ object Main {
     def ignore(x: => Any) = ()
 
     {
-      val        baseDir     = Key[String](       "baseDir")
-      val         srcDir     = Key[String](        "srcDir")
-      val      targetDir     = Key[String](     "targetDir")
-      val    scalaSrcDir     = Key[String](   "scalaSrcDir")
-      val        srcDirs     = Key[Seq[String]]("srcDirs")
-      val crossTargetDir     = Key[String]("crossTargetDir")
-      val scalaVersion       = Key[String]("scalaVersion")
-      val scalaBinaryVersion = Key[String]("scalaBinaryVersion")
+      val        baseDir     = key[String](       "baseDir")
+      val         srcDir     = key[String](        "srcDir")
+      val      targetDir     = key[String](     "targetDir")
+      val    scalaSrcDir     = key[String](   "scalaSrcDir")
+      val        srcDirs     = key[Seq[String]]("srcDirs")
+      val crossTargetDir     = key[String]("crossTargetDir")
+      val scalaVersion       = key[String]("scalaVersion")
+      val scalaBinaryVersion = key[String]("scalaBinaryVersion")
 
       val settingsMap: SettingMap = SettingMap.fromVarargs(
                     srcDir in Global    <<= baseDir.map(_ / "src"),

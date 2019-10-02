@@ -15,10 +15,6 @@ final case class Key[A](name: Name[A], scope: Scope) extends Init[A] {
   def :=(value: A): Setting[A]       = this <<= Init.Value(value)
 }
 
-object Key {
-  def apply[A](name: String): Key[A] = Key(Name(name), This)
-}
-
 sealed abstract class Init[+A] {
   final def map[B](f: A => B): Init[B]                         = Init.Mapped(this, f)
   final def zipWith[B, C](y: Init[B])(f: (A, B) => C): Init[C] = Init.ZipWith(this, y, f)
