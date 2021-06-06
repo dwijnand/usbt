@@ -18,6 +18,7 @@ object Show {
   implicit def showF2[A, B, C]: Show[(A, B) => C]     = _ => "<f>"
   implicit def showOption[A: Show]: Show[Option[A]]   = _.fold("None")(x => show"Some($x)")
   implicit def showList[A: Show]: Show[List[A]]       = _.view.map(show(_)).toIndexedSeq.toString
+  implicit def showName: Show[Name]                   = _.value
   implicit def showResolvedScope: Show[ResolvedScope] = show(_: Scope)
   implicit def showInitPure[A]: Show[Init.Pure[A]]    = show(_: Init[A])
 
@@ -36,9 +37,9 @@ object Show {
   implicit def showInit[A]: Show[Init[A]] = {
     case Init.Pure(x: String)  => wrappedString(x)
     case Init.Pure(x)          => x.toString
-    case Init.Map(init, f)     => show"${showParens(init)}.map($f)"
-    case Init.ZipWith(x, y, f) => show"${showParens(x)}.zipWith($y)($f)"
-    case Init.FlatMap(init, f) => show"${showParens(init)}.flatMap($f)"
+    case Init.Map(init, f)     => show"${showParens(init)(showInit)}.map($f)"
+    case Init.ZipWith(x, y, f) => show"${showParens(x)(showInit)}.zipWith($y)($f)"
+    case Init.FlatMap(init, f) => show"${showParens(init)(showInit)}.flatMap($f)"
     case x: Key[a]             => show(x)
   }
 
@@ -58,4 +59,14 @@ object Show {
   final class ShowInterpolator(private val sc: StringContext) extends AnyVal {
     def show(args: Shown*): String = sc.s(args: _*)
   }
+}
+
+object `package` {
+  def show[A](x: A)(implicit z: Show[A]) = z.show(x)
+  implicit def showInterpolator(sc: StringContext): Show.ShowInterpolator = new Show.ShowInterpolator(sc)
+}
+
+/** Natural transformation. */
+trait ~>[-A[_], +B[_]] {
+  def apply[T](a: A[T]): B[T]
 }

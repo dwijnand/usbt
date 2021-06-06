@@ -1,28 +1,38 @@
 package usbt
 
-final case class Key[A](name: String, scope: Scope = This) extends Init[A] {
+final case class Name(value: String)
+
+final case class Key[A](name: Name, scope: Scope) extends Init[A] {
   def in(scope: Scope): Key[A]       = Key(name, scope)
   def <<=(init: Init[A]): Setting[A] = Setting(this, init)
   def :=(value: A): Setting[A]       = this <<= Init.Pure(value)
 }
+object Key {
+  def apply[A](name: String) = new Key[A](Name(name), This)
+}
 
-sealed abstract class Init[+A]
+sealed abstract class Init[+A] {
+  final def map[B](f: A => B): Init[B]                         = Init.Map(this, f)
+  final def zipWith[B, C](y: Init[B])(f: (A, B) => C): Init[C] = Init.ZipWith(this, y, f)
+  final def flatMap[B](f: A => Init[B]): Init[B]               = Init.FlatMap(this, f)
+}
 object Init {
   final case class Pure[A](value: A)                                        extends Init[A]
   final case class Map[A, B](init: Init[A], f: A => B)                      extends Init[B]
   final case class ZipWith[A, B, C](x: Init[A], y: Init[B], f: (A, B) => C) extends Init[C]
   final case class FlatMap[A, B](init: Init[A], f: A => Init[B])            extends Init[B]
-
-  implicit class InitOps[A](private val init: Init[A]) extends AnyVal {
-    final def map[B](f: A => B): Init[B]                         = Init.Map(init, f)
-    final def zipWith[B, C](y: Init[B])(f: (A, B) => C): Init[C] = Init.ZipWith(init, y, f)
-    final def flatMap[B](f: A => Init[B]): Init[B]               = Init.FlatMap(init, f)
-  }
 }
 
 final case class Setting[A](key: Key[A], init: Init[A])
 
-sealed trait Scope
+sealed trait Scope {
+  def or(fallback: ResolvedScope): ResolvedScope = this match {
+    case This      => fallback
+    case Global    => Global
+    case ThisBuild => ThisBuild
+    case x: Proj   => x
+  }
+}
 sealed trait ResolvedScope        extends Scope // "Resolved" means doesn't rely on context (fully-qualified)
 case object This                  extends Scope
 case object Global                extends ResolvedScope
@@ -30,15 +40,6 @@ case object ThisBuild             extends ResolvedScope
 final case class Proj(id: String) extends ResolvedScope
 
 object Scope {
-  implicit class ScopeOps(private val scope: Scope) extends AnyVal {
-    def or(fallback: ResolvedScope): ResolvedScope = scope match {
-      case This      => fallback
-      case Global    => Global
-      case ThisBuild => ThisBuild
-      case x: Proj   => x
-    }
-  }
-
   val delegates: ResolvedScope => LazyList[ResolvedScope] = {
     case scope @ (_: Proj) => scope #:: delegates(ThisBuild)
     case scope @ ThisBuild => scope #:: delegates(Global)
@@ -47,16 +48,6 @@ object Scope {
 }
 
 final case class Settings(value: Seq[Setting[_]]) {
-  private val lookup: Map[String, Map[ResolvedScope, Init[_]]] = {
-    value.groupMapReduce(_.key.name)(s => Map(s.key.scope.or(Global) -> s.init))(_ ++ _)
-  }
-
-  private def getInit[A](key: Key[A], scope: ResolvedScope): Option[Init[A]] = {
-    lookup.get(key.name).flatMap { scopeToInitMap =>
-      Scope.delegates(scope).flatMap(scopeToInitMap.get(_)).headOption
-    }.asInstanceOf[Option[Init[A]]]
-  }
-
   def getValue[A](key: Key[A]): Option[A] = evalInit(key.scope.or(Global))(key)
 
   private def evalInit(fallbackScope: ResolvedScope): Init ~> Option = new ~>[Init, Option] { eval =>
@@ -68,14 +59,14 @@ final case class Settings(value: Seq[Setting[_]]) {
       case key: Key[T]           => getInit(key, key.scope.or(fallbackScope)).flatMap(eval(_))
     }
   }
-}
 
-object `package` {
-  def show[A](x: A)(implicit z: Show[A]) = z.show(x)
-  implicit def showInterpolator(sc: StringContext): Show.ShowInterpolator = new Show.ShowInterpolator(sc)
-}
+  private def getInit[A](key: Key[A], scope: ResolvedScope): Option[Init[A]] = {
+    lookup.get(key.name).flatMap { scopeToInitMap =>
+      Scope.delegates(scope).flatMap(scopeToInitMap.get(_)).headOption
+    }.asInstanceOf[Option[Init[A]]]
+  }
 
-/** Natural transformation. */
-trait ~>[-A[_], +B[_]] {
-  def apply[T](a: A[T]): B[T]
+  private val lookup: Map[Name, Map[ResolvedScope, Init[_]]] = {
+    value.groupMapReduce(_.key.name)(s => Map(s.key.scope.or(Global) -> s.init))(_ ++ _)
+  }
 }

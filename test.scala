@@ -3,32 +3,8 @@ package test
 import usbt._
 
 object Main {
-  implicit class StringWithSlash(private val self: String) extends AnyVal {
-    def /(s: String) = if (self.endsWith("/")) self + s else self + "/" + s
-  }
-
-  val foo = Key[String]("foo")
-  val bar = Key[String]("bar")
-  val baz = Key[String]("baz")
-
   val bippy = Proj("bippy")
-
-  def assertEquals[A](actual: A, expected: A, desc: String = "") = {
-    implicit val z: Show[A] = _.toString
-    if (actual == expected)
-      None
-    else if (desc == "")
-      Some(show"Expected $expected, Actual $actual")
-    else
-      Some(show"For $desc: Expected $expected, Actual $actual")
-  }
-
-  def assertSettings[A](settings: Settings)(ss: Setting[_]*) = {
-    println(show(settings))
-    ss.flatMap(x => (x: @unchecked) match { case Setting(key, Init.Pure(value)) =>
-      assertEquals(settings.getValue(key), Some(value), show(key))
-    })
-  }
+  def tests = Tests(Seq(testStd, testDispatch, testKeyDup))
 
   def testStd = Test {
     val        baseDir     = Key[String](       "baseDir")
@@ -40,13 +16,13 @@ object Main {
     val scalaVersion       = Key[String]("scalaVersion")
     val scalaBinaryVersion = Key[String]("scalaBinaryVersion")
 
-    val settings: Settings = Settings(Seq(
-                  srcDir in Global    <<= baseDir.map(_ / "src"),
-               targetDir in Global    <<= baseDir.map(_ / "target"),
-             scalaSrcDir in Global    <<= srcDir.map(_ / "main/scala"),
+    val settings = Settings(Seq(
+                 srcDir  in Global    <<= baseDir.map(_ / "src"),
+              targetDir  in Global    <<= baseDir.map(_ / "target"),
+            scalaSrcDir  in Global    <<= srcDir.map(_ / "main/scala"),
                  srcDirs in Global    <<= scalaSrcDir.zipWith(scalaBinaryVersion)((dir, sbv) => Seq(dir, show"$dir-$sbv")),
-          crossTargetDir in Global    <<= targetDir.zipWith(scalaBinaryVersion)((target, sbv) => target / show"scala-$sbv"),
-                 baseDir in ThisBuild  := "/",
+         crossTargetDir  in Global    <<=   targetDir.zipWith(scalaBinaryVersion)((dir, sbv) => dir / show"scala-$sbv"),
+                baseDir  in ThisBuild  := "/",
       scalaVersion       in ThisBuild  := "2.12.8",
       scalaBinaryVersion in ThisBuild  := "2.12",
                  baseDir in bippy      := "/bippy",
@@ -69,6 +45,9 @@ object Main {
   }
 
   def testDispatch = Test {
+    val foo = Key[String]("foo")
+    val bar = Key[String]("bar")
+    val baz = Key[String]("baz")
     assertSettings(Settings(Seq(
       foo in Global  := "g",
       foo in bippy   := "b",
@@ -81,6 +60,7 @@ object Main {
   }
 
   def testKeyDup = Test {
+    val foo  = Key[String]("foo")
     val foo2 = Key[Int]("foo")
     val settings = Settings(Seq(foo := "a"))
     try {
@@ -91,17 +71,33 @@ object Main {
     }
   }
 
-  def tests = Tests(Seq(testStd, testDispatch, testKeyDup))
+  def assertSettings[A](settings: Settings)(ss: Setting[_]*) = {
+    println(show(settings))
+    ss.flatMap { x =>
+      val Setting(key, Init.Pure(value)) = x: @unchecked
+      assertEquals(settings.getValue(key), Some(value), show(key))
+    }
+  }
+
   def main(args: Array[String]): Unit = runTest(tests)
   def runTest(test: Test): Unit = test match {
     case TestCase(thunk) => thunk().foreach(s => println(s"${Console.RED}ERR${Console.RESET} $s"))
     case Tests(tests)    => tests.foreach(runTest)
   }
 
+  implicit class StringWithSlash(private val self: String) extends AnyVal {
+    def /(s: String) = if (self.endsWith("/")) self + s else self + "/" + s
+  }
+
   sealed trait Test
   final case class TestCase(thunk: () => Seq[String]) extends Test
   final case class Tests(value: Seq[Test])            extends Test
-  object Test {
-    def apply(thunk: => Seq[String]): TestCase = TestCase(() => thunk)
+  def Test(thunk: => Seq[String]) = TestCase(() => thunk)
+
+  def assertEquals[A](actual: A, expected: A, desc: String = "") = {
+    implicit val z: Show[A] = _.toString
+    if (actual == expected) None
+    else if (desc == "") Some(show"Expected $expected, Actual $actual")
+    else Some(show"For $desc: Expected $expected, Actual $actual")
   }
 }
